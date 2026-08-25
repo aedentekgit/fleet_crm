@@ -1,0 +1,26 @@
+{
+  "name": "rens-dynamics-erp",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Rens Dynamics Logistics — Operations ERP (dispatch, quotations, approvals, fleet, driver PWA)",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.0",
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "lucide-react": "^1.31.0",
+    "mysql2": "^3.23.2",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.26.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.1",
+    "vite": "^5.4.1"
+  }
+}

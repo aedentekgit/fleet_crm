@@ -1,0 +1,19 @@
+{
+  "name": "Rens Driver",
+  "short_name": "Rens Driver",
+  "description": "Rens Dynamics Logistics — driver job app",
+  "start_url": "driver.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0E2545",
+  "theme_color": "#0E2545",
+  "icons": [
+    {
+      "src": "assets/icons/logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

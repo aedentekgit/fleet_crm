@@ -1,0 +1,756 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rens Dynamics — Customer &amp; Quotation Registry</title>
+<style>
+  :root{
+    --ink:#1c2430;
+    --ink-soft:#5b6472;
+    --paper:#fbfaf7;
+    --panel:#ffffff;
+    --line:#e2e0d8;
+    --line-strong:#c9c6ba;
+    --amber:#c1571f;
+    --amber-soft:#f3e3d6;
+    --green:#3f6b4a;
+    --green-soft:#e5ede7;
+    --mono: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
+    --sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --radius: 3px;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    font-family:var(--sans);
+    background:var(--paper);
+    color:var(--ink);
+    -webkit-font-smoothing:antialiased;
+  }
+  @font-face{ font-family:'Inter'; src:local('Inter'); }
+
+  .app{ max-width:1180px; margin:0 auto; padding:18px 16px 80px; }
+
+  /* Header / ledger identity */
+  header.brand{
+    display:flex; align-items:baseline; justify-content:space-between;
+    border-bottom:2px solid var(--ink); padding-bottom:12px; margin-bottom:6px; flex-wrap:wrap; gap:8px;
+  }
+  .brand-mark{ display:flex; align-items:baseline; gap:10px; }
+  .brand-mark .glyph{
+    font-family:var(--mono); font-weight:700; font-size:13px; letter-spacing:1px;
+    border:1.5px solid var(--ink); border-radius:50%; width:34px; height:34px;
+    display:flex; align-items:center; justify-content:center; flex:none;
+  }
+  .brand-mark h1{ font-size:17px; margin:0; font-weight:700; letter-spacing:.2px; }
+  .brand-mark p{ margin:1px 0 0; font-size:11.5px; color:var(--ink-soft); font-family:var(--mono); }
+  .rev-tag{ font-family:var(--mono); font-size:11px; color:var(--ink-soft); }
+
+  nav.tabs{ display:flex; gap:2px; margin:18px 0 16px; border-bottom:1px solid var(--line); }
+  nav.tabs button{
+    font-family:var(--mono); font-size:12.5px; letter-spacing:.3px; text-transform:uppercase;
+    background:none; border:none; padding:10px 4px; margin-right:22px; color:var(--ink-soft);
+    cursor:pointer; border-bottom:2px solid transparent; position:relative; top:1px;
+  }
+  nav.tabs button.active{ color:var(--ink); border-bottom-color:var(--amber); font-weight:600; }
+  nav.tabs .count{
+    display:inline-block; margin-left:6px; background:var(--amber-soft); color:var(--amber);
+    font-size:10px; padding:1px 6px; border-radius:10px; font-weight:700;
+  }
+
+  .panel{ background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:18px; margin-bottom:16px; }
+  .panel h2{ font-size:13px; text-transform:uppercase; letter-spacing:.6px; margin:0 0 14px; color:var(--ink); font-weight:700;}
+  .panel h2 .sub{ text-transform:none; font-weight:400; color:var(--ink-soft); letter-spacing:0; font-size:11.5px; }
+
+  .grid{ display:grid; gap:10px 14px; }
+  .grid.cols-2{ grid-template-columns:1fr 1fr; }
+  .grid.cols-3{ grid-template-columns:1fr 1fr 1fr; }
+  @media(max-width:640px){ .grid.cols-2, .grid.cols-3{ grid-template-columns:1fr; } }
+
+  label.field{ display:flex; flex-direction:column; gap:4px; font-size:12px; color:var(--ink-soft); }
+  label.field span{ font-weight:600; color:var(--ink); font-size:11.5px; }
+  input[type=text], input[type=tel], input[type=email], input[type=number], input[type=date], textarea, select{
+    font-family:var(--sans); font-size:13.5px; padding:8px 9px; border:1px solid var(--line-strong);
+    border-radius:var(--radius); background:#fff; color:var(--ink); width:100%;
+  }
+  input:focus, textarea:focus, select:focus{ outline:2px solid var(--amber); outline-offset:0; border-color:var(--amber); }
+  textarea{ resize:vertical; font-family:var(--sans); line-height:1.5; }
+
+  .btn{
+    font-family:var(--sans); font-size:12.5px; font-weight:600; padding:9px 16px; border-radius:var(--radius);
+    border:1px solid var(--ink); background:var(--ink); color:#fff; cursor:pointer; letter-spacing:.2px;
+  }
+  .btn:hover{ background:#000; }
+  .btn.secondary{ background:#fff; color:var(--ink); border-color:var(--line-strong); }
+  .btn.secondary:hover{ border-color:var(--ink); }
+  .btn.amber{ background:var(--amber); border-color:var(--amber); }
+  .btn.amber:hover{ background:#a3480f; }
+  .btn.ghost{ background:none; border:none; color:var(--ink-soft); padding:4px 6px; font-size:12px; text-decoration:underline; }
+  .btn.ghost.danger{ color:#a4342a; }
+  .btn:disabled{ opacity:.45; cursor:not-allowed; }
+  .row-actions{ display:flex; gap:10px; margin-top:14px; flex-wrap:wrap; }
+
+  table{ width:100%; border-collapse:collapse; font-size:12.8px; }
+  th{ text-align:left; font-family:var(--mono); font-size:10.5px; text-transform:uppercase; letter-spacing:.4px;
+      color:var(--ink-soft); border-bottom:1.5px solid var(--ink); padding:7px 8px; white-space:nowrap; }
+  td{ padding:8px; border-bottom:1px solid var(--line); vertical-align:top; }
+  tr:last-child td{ border-bottom:none; }
+  tr.clickable{ cursor:pointer; }
+  tr.clickable:hover{ background:#f6f4ee; }
+  .num{ font-family:var(--mono); text-align:right; }
+  .muted{ color:var(--ink-soft); }
+  .empty{ padding:30px 10px; text-align:center; color:var(--ink-soft); font-size:12.5px; border:1px dashed var(--line-strong); border-radius:var(--radius); }
+
+  .pill{ display:inline-block; font-size:10.5px; font-family:var(--mono); padding:2px 7px; border-radius:10px; }
+  .pill.active{ background:var(--green-soft); color:var(--green); }
+  .pill.draft{ background:var(--amber-soft); color:var(--amber); }
+
+  .route-row{ display:grid; grid-template-columns:1.3fr 1.3fr repeat(var(--lorry-count,5), .8fr) 34px; gap:6px; align-items:center; margin-bottom:6px; }
+  .route-row input{ font-size:12.5px; padding:6px 7px; }
+  .route-head{ font-family:var(--mono); font-size:10px; text-transform:uppercase; color:var(--ink-soft); }
+  .icon-btn{ background:none; border:none; color:#a4342a; cursor:pointer; font-size:15px; padding:2px; }
+  .icon-btn:hover{ color:#7a2620; }
+
+  .toolbar{ display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; gap:10px; flex-wrap:wrap; }
+  .search{ max-width:260px; }
+
+  .toast{
+    position:fixed; bottom:18px; left:50%; transform:translateX(-50%);
+    background:var(--ink); color:#fff; font-size:12.5px; padding:9px 18px; border-radius:20px;
+    opacity:0; pointer-events:none; transition:opacity .25s, transform .25s; z-index:50; font-family:var(--mono);
+  }
+  .toast.show{ opacity:1; transform:translateX(-50%) translateY(-4px); }
+
+  /* Print / letterhead view */
+  .doc-overlay{ position:fixed; inset:0; background:rgba(28,36,48,.55); display:flex; align-items:flex-start; justify-content:center;
+    overflow:auto; padding:24px 12px; z-index:60; }
+  .doc-sheet{ background:#fff; width:100%; max-width:760px; padding:38px 40px; border-radius:2px; box-shadow:0 12px 40px rgba(0,0,0,.25); }
+  .doc-close-bar{ max-width:760px; width:100%; display:flex; justify-content:flex-end; gap:8px; margin-bottom:10px; }
+  .doc-header{ display:flex; align-items:flex-start; gap:14px; border-bottom:2px solid var(--ink); padding-bottom:10px; margin-bottom:16px; }
+  .doc-header .glyph{ font-family:var(--mono); font-weight:700; font-size:12px; border:1.5px solid var(--ink); border-radius:50%; width:38px; height:38px; display:flex; align-items:center; justify-content:center; flex:none; margin-top:2px;}
+  .doc-header h1{ font-size:16px; margin:0 0 2px; letter-spacing:.2px; }
+  .doc-header p{ margin:0; font-size:10.5px; color:var(--ink-soft); line-height:1.5; }
+  .doc-meta{ display:flex; justify-content:space-between; margin-bottom:14px; font-size:11.5px; gap:20px; }
+  .doc-meta .to div:first-child{ font-weight:700; margin-bottom:2px;}
+  .doc-meta .ref{ text-align:right; font-family:var(--mono); color:var(--ink-soft); }
+  .doc-meta .ref div{ margin-bottom:1px; }
+  .doc-title{ text-align:center; font-size:15px; font-weight:700; letter-spacing:2px; margin:10px 0 14px; text-transform:uppercase; }
+  .doc-intro{ font-size:11.5px; margin-bottom:14px; line-height:1.5; }
+  table.doc-table{ width:100%; border:1px solid var(--ink); border-collapse:collapse; font-size:10.8px; margin-bottom:16px; }
+  table.doc-table th{ border:1px solid var(--ink); background:#f2f0ea; text-align:center; padding:5px 4px; font-family:var(--sans); text-transform:none; letter-spacing:0; color:var(--ink);}
+  table.doc-table td{ border:1px solid var(--ink); padding:5px 6px; text-align:center; }
+  table.doc-table td.left{ text-align:left; }
+  .doc-terms{ font-size:10.5px; line-height:1.6; margin-bottom:14px; white-space:pre-wrap; }
+  .doc-sign{ font-size:11px; margin-top:24px; }
+  .doc-sign .name{ margin-top:26px; font-weight:700; }
+  @media print{
+    body *{ visibility:hidden; }
+    .doc-sheet, .doc-sheet *{ visibility:visible; }
+    .doc-sheet{ box-shadow:none; position:absolute; top:0; left:0; width:100%; padding:0; }
+    .doc-close-bar{ display:none; }
+    .doc-overlay{ position:static; background:none; padding:0; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <header class="brand">
+    <div class="brand-mark">
+      <div class="glyph">RD</div>
+      <div>
+        <h1>Rens Dynamics Logistics — Registry</h1>
+        <p id="companyRegLine">950592-K · Customer &amp; Quotation records</p>
+      </div>
+    </div>
+    <div class="rev-tag" id="syncTag">loading…</div>
+  </header>
+
+  <nav class="tabs">
+    <button data-tab="customers" class="active">Customers <span class="count" id="custCount">0</span></button>
+    <button data-tab="quotations">Quotations <span class="count" id="quoCount">0</span></button>
+    <button data-tab="settings">Company details</button>
+  </nav>
+
+  <!-- CUSTOMERS TAB -->
+  <section id="tab-customers">
+    <div class="panel">
+      <h2 id="custFormTitle">Register customer</h2>
+      <div class="grid cols-2">
+        <label class="field"><span>Company name *</span><input type="text" id="c_name" placeholder="e.g. Aureumaex Industries (M) Sdn Bhd"></label>
+        <label class="field"><span>Company reg. no.</span><input type="text" id="c_regno" placeholder="e.g. 950592-K"></label>
+        <label class="field" style="grid-column:1/-1"><span>Address</span><textarea id="c_address" rows="2" placeholder="Lot 5556, Block 2 &amp; 3, Batu 14, Jalan Muar, 84900 Tangkak, Johor"></textarea></label>
+        <label class="field"><span>Attn / contact person</span><input type="text" id="c_attn" placeholder="e.g. Mr Andrew"></label>
+        <label class="field"><span>Phone (H/P)</span><input type="tel" id="c_phone" placeholder="012-3456789"></label>
+        <label class="field"><span>Email</span><input type="email" id="c_email" placeholder="name@company.com"></label>
+        <label class="field"><span>Payment terms</span><input type="text" id="c_terms" placeholder="e.g. 30 days credit from invoice date"></label>
+        <label class="field" style="grid-column:1/-1"><span>Notes</span><input type="text" id="c_notes" placeholder="Optional — e.g. usual lorry sizes, diesel band used"></label>
+      </div>
+      <div class="row-actions">
+        <button class="btn amber" id="saveCustomerBtn">Save customer</button>
+        <button class="btn secondary" id="cancelCustomerBtn" style="display:none;">Cancel edit</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="toolbar">
+        <h2 style="margin:0;">Registered customers</h2>
+        <input type="text" class="search" id="custSearch" placeholder="Search company, attn, phone…">
+      </div>
+      <div id="customerTableWrap"></div>
+    </div>
+  </section>
+
+  <!-- QUOTATIONS TAB -->
+  <section id="tab-quotations" style="display:none;">
+    <div class="panel">
+      <h2 id="quoFormTitle">Register quotation</h2>
+      <div class="grid cols-3">
+        <label class="field"><span>Customer *</span>
+          <select id="q_customer"><option value="">— select registered customer —</option></select>
+        </label>
+        <label class="field"><span>Our ref.</span><input type="text" id="q_ref" placeholder="e.g. Q010/05/25"></label>
+        <label class="field"><span>Date</span><input type="date" id="q_date"></label>
+        <label class="field"><span>Rev.</span><input type="text" id="q_rev" placeholder="e.g. 1 0"></label>
+        <label class="field"><span>Sender</span><input type="text" id="q_sender" placeholder="e.g. Rauf Rao"></label>
+        <label class="field"><span>Sender H/P</span><input type="tel" id="q_senderphone" placeholder="012-6078449"></label>
+        <label class="field" style="grid-column:1/-1"><span>Applies to item no. (optional)</span><input type="text" id="q_itemno" placeholder="e.g. 8, 11, 12"></label>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Lorry types on this quotation <span class="sub">— edit column labels to match tonnage/length used</span></h2>
+      <div class="grid" id="lorryTypeEditor" style="grid-template-columns:repeat(auto-fit, minmax(150px,1fr)); margin-bottom:10px;"></div>
+      <button class="btn secondary" id="addLorryTypeBtn" type="button">+ Add lorry type column</button>
+    </div>
+
+    <div class="panel">
+      <h2>Routes &amp; rates (RM) <span class="sub">— per lorry type, collection → unloading</span></h2>
+      <div id="routeHeadRow" class="route-row route-head"></div>
+      <div id="routeRows"></div>
+      <div class="row-actions">
+        <button class="btn secondary" id="addRouteBtn" type="button">+ Add route</button>
+        <button class="btn secondary" id="addDropointBtn" type="button">+ Add dropoint row</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Terms &amp; conditions</h2>
+      <textarea id="q_termsText" rows="4"></textarea>
+    </div>
+
+    <div class="row-actions" style="margin:-4px 0 20px;">
+      <button class="btn amber" id="saveQuotationBtn">Save quotation</button>
+      <button class="btn secondary" id="cancelQuotationBtn" style="display:none;">Cancel edit</button>
+    </div>
+
+    <div class="panel">
+      <div class="toolbar">
+        <h2 style="margin:0;">Saved quotations</h2>
+        <input type="text" class="search" id="quoSearch" placeholder="Search customer, ref…">
+      </div>
+      <div id="quotationTableWrap"></div>
+    </div>
+  </section>
+
+  <!-- SETTINGS TAB -->
+  <section id="tab-settings" style="display:none;">
+    <div class="panel">
+      <h2>Letterhead details <span class="sub">— used when printing/viewing a quotation document</span></h2>
+      <div class="grid cols-2">
+        <label class="field"><span>Company name</span><input type="text" id="s_name"></label>
+        <label class="field"><span>Reg. no.</span><input type="text" id="s_regno"></label>
+        <label class="field" style="grid-column:1/-1"><span>Address</span><textarea id="s_address" rows="2"></textarea></label>
+        <label class="field"><span>Phone</span><input type="text" id="s_phone"></label>
+        <label class="field"><span>Email</span><input type="text" id="s_email"></label>
+      </div>
+      <div class="row-actions"><button class="btn amber" id="saveSettingsBtn">Save details</button></div>
+    </div>
+    <div class="panel">
+      <h2>About this registry</h2>
+      <p class="muted" style="font-size:12.5px; line-height:1.6;">
+        Data entered here is shared with everyone who opens this tool (it is not private to one device).
+        Customers are registered once, then reused when building a quotation. Each quotation stores its own
+        lorry-type columns and route rates, so different customers can keep different tonnage/length structures —
+        matching how your paper quotations vary by client. Use "View / print" on a saved quotation to get a
+        letterhead-formatted copy.
+      </p>
+    </div>
+  </section>
+
+</div>
+
+<div class="toast" id="toast"></div>
+<div class="doc-overlay" id="docOverlay" style="display:none;"></div>
+
+<script>
+const SHARED = true;
+let customers = [];
+let quotations = [];
+let settings = { name:"RENS DYNAMICS LOGISTICS SDN BHD", regno:"950592-K",
+  address:"P.T 2140, Sri Senawang Light Industrial Centre, 70450 Seremban, Negeri Sembilan.",
+  phone:"012-616 8449", email:"rensdynamic.logistics@gmail.com" };
+
+let editingCustomerId = null;
+let editingQuotationId = null;
+let currentLorryTypes = ["1 ton / 9ft","3-5 ton / 17ft","10 ton / 24ft","14 ton / 30ft","20 ton / 40ft"];
+let currentRoutes = []; // {collection, unloading, isDropoint, rates:{typeLabel: value}}
+
+function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
+function esc(s){ return (s||"").replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function showToast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(showToast._h);
+  showToast._h = setTimeout(()=>t.classList.remove('show'), 1800);
+}
+
+async function loadAll(){
+  try{
+    const c = await window.storage.get('customers', SHARED);
+    customers = c ? JSON.parse(c.value) : [];
+  }catch(e){ customers = []; }
+  try{
+    const q = await window.storage.get('quotations', SHARED);
+    quotations = q ? JSON.parse(q.value) : [];
+  }catch(e){ quotations = []; }
+  try{
+    const s = await window.storage.get('settings', SHARED);
+    if(s) settings = JSON.parse(s.value);
+  }catch(e){}
+  document.getElementById('syncTag').textContent = 'synced';
+  renderCustomers(); renderCustomerOptions(); renderQuotations(); renderSettings(); updateCounts();
+}
+
+async function persist(key, value){
+  try{
+    await window.storage.set(key, JSON.stringify(value), SHARED);
+    return true;
+  }catch(e){ showToast('Save failed — try again'); return false; }
+}
+
+function updateCounts(){
+  document.getElementById('custCount').textContent = customers.length;
+  document.getElementById('quoCount').textContent = quotations.length;
+}
+
+/* ---------- TABS ---------- */
+document.querySelectorAll('nav.tabs button').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    ['customers','quotations','settings'].forEach(t=>{
+      document.getElementById('tab-'+t).style.display = (t===btn.dataset.tab) ? '' : 'none';
+    });
+  });
+});
+
+/* ---------- CUSTOMERS ---------- */
+function renderCustomers(){
+  const wrap = document.getElementById('customerTableWrap');
+  const q = (document.getElementById('custSearch').value || '').toLowerCase();
+  const list = customers.filter(c =>
+    !q || [c.name,c.attn,c.phone,c.email].some(v => (v||'').toLowerCase().includes(q))
+  ).sort((a,b)=>a.name.localeCompare(b.name));
+
+  if(!list.length){
+    wrap.innerHTML = '<div class="empty">No customers registered yet. Add one above.</div>';
+    return;
+  }
+  wrap.innerHTML = `<table>
+    <thead><tr><th>Company</th><th>Attn</th><th>Phone</th><th>Terms</th><th>Quotations</th><th></th></tr></thead>
+    <tbody>${list.map(c=>{
+      const qCount = quotations.filter(q=>q.customerId===c.id).length;
+      return `<tr>
+        <td><strong>${esc(c.name)}</strong>${c.regno?`<div class="muted">${esc(c.regno)}</div>`:''}</td>
+        <td>${esc(c.attn||'—')}</td>
+        <td>${esc(c.phone||'—')}</td>
+        <td>${esc(c.terms||'—')}</td>
+        <td>${qCount}</td>
+        <td style="white-space:nowrap;">
+          <button class="btn ghost" data-edit-customer="${c.id}">Edit</button>
+          <button class="btn ghost danger" data-del-customer="${c.id}">Delete</button>
+        </td>
+      </tr>`;
+    }).join('')}</tbody></table>`;
+
+  wrap.querySelectorAll('[data-edit-customer]').forEach(b=>b.addEventListener('click', ()=>editCustomer(b.dataset.editCustomer)));
+  wrap.querySelectorAll('[data-del-customer]').forEach(b=>b.addEventListener('click', ()=>deleteCustomer(b.dataset.delCustomer)));
+}
+
+function editCustomer(id){
+  const c = customers.find(x=>x.id===id); if(!c) return;
+  editingCustomerId = id;
+  document.getElementById('c_name').value = c.name||'';
+  document.getElementById('c_regno').value = c.regno||'';
+  document.getElementById('c_address').value = c.address||'';
+  document.getElementById('c_attn').value = c.attn||'';
+  document.getElementById('c_phone').value = c.phone||'';
+  document.getElementById('c_email').value = c.email||'';
+  document.getElementById('c_terms').value = c.terms||'';
+  document.getElementById('c_notes').value = c.notes||'';
+  document.getElementById('custFormTitle').textContent = 'Edit customer — ' + c.name;
+  document.getElementById('cancelCustomerBtn').style.display = '';
+  window.scrollTo({top:0, behavior:'smooth'});
+}
+
+function resetCustomerForm(){
+  editingCustomerId = null;
+  ['c_name','c_regno','c_address','c_attn','c_phone','c_email','c_terms','c_notes'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('custFormTitle').textContent = 'Register customer';
+  document.getElementById('cancelCustomerBtn').style.display = 'none';
+}
+
+document.getElementById('cancelCustomerBtn').addEventListener('click', resetCustomerForm);
+
+function isValidEmail(email) {
+  if (!email || !email.trim()) return true;
+  return /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(email.trim());
+}
+
+function isValidPhone(phone) {
+  if (!phone || !phone.trim()) return true;
+  const trimmed = phone.trim();
+  const validChars = /^[0-9+\s\-()]+$/.test(trimmed);
+  const digits = trimmed.replace(/\D/g, '');
+  return validChars && digits.length >= 8 && digits.length <= 15;
+}
+
+document.getElementById('saveCustomerBtn').addEventListener('click', async ()=>{
+  const name = document.getElementById('c_name').value.trim();
+  if(!name){ showToast('Company name is required'); return; }
+  const phone = document.getElementById('c_phone').value.trim();
+  if(phone && !isValidPhone(phone)){ showToast('Please enter a valid phone number (min 8 digits, e.g. 012-3456789)'); return; }
+  const email = document.getElementById('c_email').value.trim();
+  if(email && !isValidEmail(email)){ showToast('Please enter a valid email address (e.g. name@company.com)'); return; }
+  const data = {
+    id: editingCustomerId || uid(),
+    name,
+    regno: document.getElementById('c_regno').value.trim(),
+    address: document.getElementById('c_address').value.trim(),
+    attn: document.getElementById('c_attn').value.trim(),
+    phone,
+    email,
+    terms: document.getElementById('c_terms').value.trim(),
+    notes: document.getElementById('c_notes').value.trim(),
+  };
+  if(editingCustomerId){
+    customers = customers.map(c=>c.id===editingCustomerId ? data : c);
+  } else {
+    customers.push(data);
+  }
+  const ok = await persist('customers', customers);
+  if(ok){ showToast('Customer saved'); resetCustomerForm(); renderCustomers(); renderCustomerOptions(); updateCounts(); }
+});
+
+async function deleteCustomer(id){
+  const c = customers.find(x=>x.id===id);
+  const linked = quotations.filter(q=>q.customerId===id).length;
+  const msg = linked ? `Delete ${c.name}? ${linked} quotation(s) tied to this customer will remain but show as unlinked.` : `Delete ${c.name}?`;
+  if(!confirm(msg)) return;
+  customers = customers.filter(x=>x.id!==id);
+  await persist('customers', customers);
+  renderCustomers(); renderCustomerOptions(); updateCounts();
+  showToast('Customer deleted');
+}
+
+document.getElementById('custSearch').addEventListener('input', renderCustomers);
+
+function renderCustomerOptions(){
+  const sel = document.getElementById('q_customer');
+  const current = sel.value;
+  sel.innerHTML = '<option value="">— select registered customer —</option>' +
+    customers.slice().sort((a,b)=>a.name.localeCompare(b.name))
+      .map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('');
+  if(current) sel.value = current;
+}
+
+/* ---------- QUOTATIONS ---------- */
+function renderLorryTypeEditor(){
+  const wrap = document.getElementById('lorryTypeEditor');
+  wrap.innerHTML = currentLorryTypes.map((t,i)=>`
+    <label class="field">
+      <span>Column ${i+1}${currentLorryTypes.length>1 ? ` <span class="icon-btn" data-rm-type="${i}" title="Remove column" style="cursor:pointer;">✕</span>`:''}</span>
+      <input type="text" data-type-idx="${i}" value="${esc(t)}">
+    </label>`).join('');
+  wrap.querySelectorAll('[data-type-idx]').forEach(inp=>{
+    inp.addEventListener('input', ()=>{ currentLorryTypes[+inp.dataset.typeIdx] = inp.value; renderRouteHead(); });
+  });
+  wrap.querySelectorAll('[data-rm-type]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const idx = +btn.dataset.rmType;
+      const removed = currentLorryTypes[idx];
+      currentLorryTypes.splice(idx,1);
+      currentRoutes.forEach(r=>delete r.rates[removed]);
+      renderLorryTypeEditor(); renderRouteHead(); renderRouteRows();
+    });
+  });
+  renderRouteHead();
+}
+
+document.getElementById('addLorryTypeBtn').addEventListener('click', ()=>{
+  currentLorryTypes.push('New type');
+  renderLorryTypeEditor(); renderRouteRows();
+});
+
+function renderRouteHead(){
+  const head = document.getElementById('routeHeadRow');
+  head.style.setProperty('--lorry-count', currentLorryTypes.length);
+  head.innerHTML = `<div>Collection</div><div>Unloading</div>` +
+    currentLorryTypes.map(t=>`<div>${esc(t)}</div>`).join('') + `<div></div>`;
+}
+
+function renderRouteRows(){
+  const wrap = document.getElementById('routeRows');
+  wrap.style.setProperty('--lorry-count', currentLorryTypes.length);
+  if(!currentRoutes.length){
+    wrap.innerHTML = '<div class="empty">No routes yet — add one below.</div>';
+    return;
+  }
+  wrap.innerHTML = currentRoutes.map((r,i)=>`
+    <div class="route-row" data-row="${i}">
+      ${r.isDropoint
+        ? `<div class="muted" style="grid-column:1/3; align-self:center;"><em>Dropoint</em> — <input type="text" data-field="collection" placeholder="e.g. between 10km" value="${esc(r.collection)}" style="width:70%; display:inline-block;"></div>`
+        : `<input type="text" data-field="collection" placeholder="Collection place" value="${esc(r.collection)}">
+           <input type="text" data-field="unloading" placeholder="Unloading place" value="${esc(r.unloading)}">`
+      }
+      ${currentLorryTypes.map(t=>`<input type="number" step="0.01" data-rate="${esc(t)}" placeholder="RM" value="${r.rates[t] ?? ''}">`).join('')}
+      <button class="icon-btn" data-rm-route="${i}" title="Remove route">✕</button>
+    </div>`).join('');
+
+  wrap.querySelectorAll('[data-field]').forEach(inp=>{
+    inp.addEventListener('input', ()=>{
+      const i = +inp.closest('[data-row]').dataset.row;
+      currentRoutes[i][inp.dataset.field] = inp.value;
+    });
+  });
+  wrap.querySelectorAll('[data-rate]').forEach(inp=>{
+    inp.addEventListener('input', ()=>{
+      const i = +inp.closest('[data-row]').dataset.row;
+      currentRoutes[i].rates[inp.dataset.rate] = inp.value;
+    });
+  });
+  wrap.querySelectorAll('[data-rm-route]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      currentRoutes.splice(+btn.dataset.rmRoute, 1);
+      renderRouteRows();
+    });
+  });
+}
+
+document.getElementById('addRouteBtn').addEventListener('click', ()=>{
+  currentRoutes.push({ collection:'', unloading:'', isDropoint:false, rates:{} });
+  renderRouteRows();
+});
+document.getElementById('addDropointBtn').addEventListener('click', ()=>{
+  currentRoutes.push({ collection:'', unloading:'Dropoint', isDropoint:true, rates:{} });
+  renderRouteRows();
+});
+
+function defaultTerms(){
+  return "Payment term: 30 days credit from date of invoice.\nWe will revise the rate if the Government increases the fuel price.\nThe company reserves the right to amend the charges and/or any term and condition as and when deemed necessary, to be mutually agreed in writing.";
+}
+
+function resetQuotationForm(){
+  editingQuotationId = null;
+  document.getElementById('q_customer').value = '';
+  document.getElementById('q_ref').value = '';
+  document.getElementById('q_date').value = new Date().toISOString().slice(0,10);
+  document.getElementById('q_rev').value = '1 0';
+  document.getElementById('q_sender').value = '';
+  document.getElementById('q_senderphone').value = '';
+  document.getElementById('q_itemno').value = '';
+  document.getElementById('q_termsText').value = defaultTerms();
+  currentLorryTypes = ["1 ton / 9ft","3-5 ton / 17ft","10 ton / 24ft","14 ton / 30ft","20 ton / 40ft"];
+  currentRoutes = [];
+  renderLorryTypeEditor(); renderRouteRows();
+  document.getElementById('quoFormTitle').textContent = 'Register quotation';
+  document.getElementById('cancelQuotationBtn').style.display = 'none';
+}
+
+function editQuotation(id){
+  const q = quotations.find(x=>x.id===id); if(!q) return;
+  editingQuotationId = id;
+  document.getElementById('q_customer').value = q.customerId || '';
+  document.getElementById('q_ref').value = q.ref || '';
+  document.getElementById('q_date').value = q.date || '';
+  document.getElementById('q_rev').value = q.rev || '';
+  document.getElementById('q_sender').value = q.sender || '';
+  document.getElementById('q_senderphone').value = q.senderPhone || '';
+  document.getElementById('q_itemno').value = q.itemNo || '';
+  document.getElementById('q_termsText').value = q.terms || defaultTerms();
+  currentLorryTypes = (q.lorryTypes || []).slice();
+  currentRoutes = (q.routes || []).map(r=>({...r, rates:{...r.rates}}));
+  renderLorryTypeEditor(); renderRouteRows();
+  document.getElementById('quoFormTitle').textContent = 'Edit quotation — ' + (q.ref || 'untitled');
+  document.getElementById('cancelQuotationBtn').style.display = '';
+  document.querySelector('nav.tabs button[data-tab="quotations"]').click();
+  window.scrollTo({top:0, behavior:'smooth'});
+}
+
+document.getElementById('cancelQuotationBtn').addEventListener('click', resetQuotationForm);
+
+document.getElementById('saveQuotationBtn').addEventListener('click', async ()=>{
+  const customerId = document.getElementById('q_customer').value;
+  if(!customerId){ showToast('Select a registered customer first'); return; }
+  const senderPhone = document.getElementById('q_senderphone').value.trim();
+  if(senderPhone && !isValidPhone(senderPhone)){ showToast('Please enter a valid sender phone number (min 8 digits, e.g. 012-6078449)'); return; }
+  if(!currentRoutes.length){ showToast('Add at least one route or dropoint row'); return; }
+  const data = {
+    id: editingQuotationId || uid(),
+    customerId,
+    ref: document.getElementById('q_ref').value.trim(),
+    date: document.getElementById('q_date').value,
+    rev: document.getElementById('q_rev').value.trim(),
+    sender: document.getElementById('q_sender').value.trim(),
+    senderPhone,
+    itemNo: document.getElementById('q_itemno').value.trim(),
+    terms: document.getElementById('q_termsText').value,
+    lorryTypes: currentLorryTypes.slice(),
+    routes: currentRoutes.map(r=>({...r, rates:{...r.rates}})),
+    updatedAt: new Date().toISOString(),
+  };
+  if(editingQuotationId){
+    quotations = quotations.map(q=>q.id===editingQuotationId ? data : q);
+  } else {
+    quotations.push(data);
+  }
+  const ok = await persist('quotations', quotations);
+  if(ok){ showToast('Quotation saved'); resetQuotationForm(); renderQuotations(); updateCounts(); }
+});
+
+function renderQuotations(){
+  const wrap = document.getElementById('quotationTableWrap');
+  const q = (document.getElementById('quoSearch').value || '').toLowerCase();
+  const list = quotations.filter(qt=>{
+    const cust = customers.find(c=>c.id===qt.customerId);
+    return !q || [(cust&&cust.name)||'', qt.ref].some(v=>(v||'').toLowerCase().includes(q));
+  }).sort((a,b)=>(b.updatedAt||'').localeCompare(a.updatedAt||''));
+
+  if(!list.length){
+    wrap.innerHTML = '<div class="empty">No quotations registered yet.</div>';
+    return;
+  }
+  wrap.innerHTML = `<table>
+    <thead><tr><th>Customer</th><th>Ref</th><th>Date</th><th>Routes</th><th>Lorry types</th><th></th></tr></thead>
+    <tbody>${list.map(qt=>{
+      const cust = customers.find(c=>c.id===qt.customerId);
+      return `<tr>
+        <td><strong>${esc(cust ? cust.name : 'Unlinked customer')}</strong></td>
+        <td class="muted">${esc(qt.ref||'—')}</td>
+        <td class="muted">${esc(qt.date||'—')}</td>
+        <td>${qt.routes.length}</td>
+        <td class="muted">${qt.lorryTypes.length}</td>
+        <td style="white-space:nowrap;">
+          <button class="btn ghost" data-view-quote="${qt.id}">View / print</button>
+          <button class="btn ghost" data-edit-quote="${qt.id}">Edit</button>
+          <button class="btn ghost danger" data-del-quote="${qt.id}">Delete</button>
+        </td>
+      </tr>`;
+    }).join('')}</tbody></table>`;
+
+  wrap.querySelectorAll('[data-edit-quote]').forEach(b=>b.addEventListener('click', ()=>editQuotation(b.dataset.editQuote)));
+  wrap.querySelectorAll('[data-view-quote]').forEach(b=>b.addEventListener('click', ()=>viewQuotation(b.dataset.viewQuote)));
+  wrap.querySelectorAll('[data-del-quote]').forEach(b=>b.addEventListener('click', ()=>deleteQuotation(b.dataset.delQuote)));
+}
+
+async function deleteQuotation(id){
+  if(!confirm('Delete this quotation?')) return;
+  quotations = quotations.filter(x=>x.id!==id);
+  await persist('quotations', quotations);
+  renderQuotations(); updateCounts();
+  showToast('Quotation deleted');
+}
+
+document.getElementById('quoSearch').addEventListener('input', renderQuotations);
+
+/* ---------- DOCUMENT VIEW ---------- */
+function viewQuotation(id){
+  const q = quotations.find(x=>x.id===id); if(!q) return;
+  const cust = customers.find(c=>c.id===q.customerId);
+  const overlay = document.getElementById('docOverlay');
+
+  const rows = q.routes.map(r=>{
+    const label = r.isDropoint
+      ? `<td class="left" colspan="2">Dropoint — ${esc(r.collection||'')}</td>`
+      : `<td class="left">${esc(r.collection)}</td><td class="left">${esc(r.unloading)}</td>`;
+    const cells = q.lorryTypes.map(t=>`<td>${r.rates[t] ? Number(r.rates[t]).toFixed(2) : '—'}</td>`).join('');
+    return `<tr>${label}${cells}</tr>`;
+  }).join('');
+
+  overlay.innerHTML = `
+    <div style="width:100%; display:flex; flex-direction:column; align-items:center;">
+      <div class="doc-close-bar">
+        <button class="btn secondary" id="docPrintBtn">Print</button>
+        <button class="btn amber" id="docCloseBtn">Close</button>
+      </div>
+      <div class="doc-sheet">
+        <div class="doc-header">
+          <div class="glyph">RD</div>
+          <div>
+            <h1>${esc(settings.name)} <span style="font-weight:400; font-size:11px;">(${esc(settings.regno)})</span></h1>
+            <p>${esc(settings.address)}<br>H/P: ${esc(settings.phone)} &nbsp;·&nbsp; Email: ${esc(settings.email)}</p>
+          </div>
+        </div>
+        <div class="doc-meta">
+          <div class="to">
+            <div>To: ${esc(cust ? cust.name : '—')}</div>
+            <div>${esc(cust && cust.address || '').replace(/\n/g,'<br>')}</div>
+            ${cust && cust.attn ? `<div style="margin-top:6px;">Attn: ${esc(cust.attn)}</div>` : ''}
+          </div>
+          <div class="ref">
+            ${q.ref ? `<div>Our Ref: ${esc(q.ref)}</div>` : ''}
+            <div>Date: ${esc(q.date || '')}</div>
+            ${q.rev ? `<div>Rev: ${esc(q.rev)}</div>` : ''}
+            ${q.sender ? `<div>Sender: ${esc(q.sender)}</div>` : ''}
+            ${q.senderPhone ? `<div>H/P: ${esc(q.senderPhone)}</div>` : ''}
+          </div>
+        </div>
+        <div class="doc-title">Quotation</div>
+        <div class="doc-intro">With regards to the above mentioned subject, we are pleased to submit our competitive rate${q.itemNo ? ` for item no. ${esc(q.itemNo)}` : ''} for your kind perusal and consideration.</div>
+        <table class="doc-table">
+          <thead><tr><th colspan="2">Destination</th>${q.lorryTypes.map(t=>`<th>${esc(t)}<br>(RM)</th>`).join('')}</tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+        <div class="doc-terms">${esc(q.terms || '')}</div>
+        <div class="doc-sign">
+          Your faithfully,<br>${esc(settings.name)}
+          <div class="name">${esc(q.sender || '')}</div>
+        </div>
+      </div>
+    </div>`;
+  overlay.style.display = 'flex';
+  document.getElementById('docCloseBtn').addEventListener('click', ()=>overlay.style.display='none');
+  document.getElementById('docPrintBtn').addEventListener('click', ()=>window.print());
+  overlay.addEventListener('click', (e)=>{ if(e.target===overlay) overlay.style.display='none'; });
+}
+
+/* ---------- SETTINGS ---------- */
+function renderSettings(){
+  document.getElementById('s_name').value = settings.name;
+  document.getElementById('s_regno').value = settings.regno;
+  document.getElementById('s_address').value = settings.address;
+  document.getElementById('s_phone').value = settings.phone;
+  document.getElementById('s_email').value = settings.email;
+  document.getElementById('companyRegLine').textContent = settings.regno + ' · Customer & Quotation records';
+}
+document.getElementById('saveSettingsBtn').addEventListener('click', async ()=>{
+  settings = {
+    name: document.getElementById('s_name').value.trim(),
+    regno: document.getElementById('s_regno').value.trim(),
+    address: document.getElementById('s_address').value.trim(),
+    phone: document.getElementById('s_phone').value.trim(),
+    email: document.getElementById('s_email').value.trim(),
+  };
+  await persist('settings', settings);
+  renderSettings();
+  showToast('Company details saved');
+});
+
+/* ---------- INIT ---------- */
+resetQuotationForm();
+loadAll();
+</script>
+</body>
+</html>

@@ -1,0 +1,6 @@
+{
+  "cleanUrls": true,
+  "rewrites": [
+    { "source": "sw.js", "destination": "js/sw.js" }
+  ]
+}

@@ -1,0 +1,779 @@
+<?php
+/* Hostinger Production MySQL Database Proxy API — Resilient & Self-Healing */
+
+header("Access-Control-Allow-Origin: *");
+header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
+header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With");
+header("Content-Type: application/json; charset=UTF-8");
+
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    http_response_code(200);
+    exit();
+}
+
+// Hostinger Database Connection
+$host = 'localhost';
+$db   = 'u745362362_renserp';
+$user = 'u745362362_renserp';
+$pass = 'Aedentek@123#';
+$charset = 'utf8mb4';
+
+$dsn = "mysql:host=$host;dbname=$db;charset=$charset";
+$options = [
+    PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
+    PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+    PDO::ATTR_EMULATE_PREPARES   => false,
+];
+
+try {
+    $pdo = new PDO($dsn, $user, $pass, $options);
+    // Disable strict foreign key check blocks for rapid ERP operations
+    $pdo->exec("SET SESSION sql_mode = 'NO_ENGINE_SUBSTITUTION'");
+    $pdo->exec("SET FOREIGN_KEY_CHECKS = 0");
+} catch (\PDOException $e) {
+    http_response_code(200);
+    echo json_encode(['connected' => false, 'error' => 'Database connection failed: ' . $e->getMessage()]);
+    exit();
+}
+
+$allowedTables = [
+    'jobs', 'customers', 'lorries', 'drivers', 'quotations', 
+    'approvals', 'inventory_items', 'inventory_issuances', 
+    'inventory_receipts', 'maintenance_records', 'staff', 
+    'lorry_crew', 'job_crew', 'customer_rates', 'customer_price_lists', 'sales_invoices',
+    'customer_contacts'
+];
+
+// Helper: Ensure Core Tables Exist
+function ensureTablesExist($pdo) {
+    static $checked = false;
+    if ($checked) return;
+    $checked = true;
+
+    try {
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS `staff` (
+              `id` VARCHAR(64) NOT NULL PRIMARY KEY,
+              `name` VARCHAR(255) NOT NULL,
+              `username` VARCHAR(100) DEFAULT NULL,
+              `role` VARCHAR(50) NOT NULL DEFAULT 'admin',
+              `pin` VARCHAR(20) NOT NULL DEFAULT '1234',
+              `active` TINYINT(1) NOT NULL DEFAULT 1,
+              `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+              `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+            CREATE TABLE IF NOT EXISTS `customers` (
+              `id` VARCHAR(64) NOT NULL PRIMARY KEY,
+              `company_name` VARCHAR(255) NOT NULL,
+              `registration_no` VARCHAR(100) DEFAULT NULL,
+              `contact_person` VARCHAR(255) DEFAULT NULL,
+              `phone` VARCHAR(50) DEFAULT NULL,
+              `email` VARCHAR(255) DEFAULT NULL,
+              `billing_address` TEXT DEFAULT NULL,
+              `payment_terms` VARCHAR(255) DEFAULT '30 days credit',
+              `zone` VARCHAR(50) DEFAULT 'Zone A',
+              `default_rate` DECIMAL(12,2) DEFAULT NULL,
+              `notes` TEXT DEFAULT NULL,
+              `is_new` TINYINT(1) DEFAULT 0,
+              `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+              `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+            CREATE TABLE IF NOT EXISTS `drivers` (
+              `id` VARCHAR(64) NOT NULL PRIMARY KEY,
+              `name` VARCHAR(255) NOT NULL,
+              `phone` VARCHAR(50) DEFAULT NULL,
+              `pin` VARCHAR(20) NOT NULL DEFAULT '0000',
+              `ic_no` VARCHAR(50) DEFAULT NULL,
+              `ic_number` VARCHAR(50) DEFAULT NULL,
+              `license_type` VARCHAR(100) DEFAULT NULL,
+              `license_class` VARCHAR(100) DEFAULT NULL,
+              `license_expiry` DATE DEFAULT NULL,
+              `is_helper` TINYINT(1) NOT NULL DEFAULT 0,
+              `status` VARCHAR(50) NOT NULL DEFAULT 'available',
+              `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+              `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+            CREATE TABLE IF NOT EXISTS `lorries` (
+              `id` VARCHAR(64) NOT NULL PRIMARY KEY,
+              `plate_no` VARCHAR(50) NOT NULL,
+              `capacity_desc` VARCHAR(255) DEFAULT NULL,
+              `roadtax_expiry` DATE DEFAULT NULL,
+              `road_tax_expiry` DATE DEFAULT NULL,
+              `puspakom_expiry` DATE DEFAULT NULL,
+              `insurance_expiry` DATE DEFAULT NULL,
+              `permit_expiry` DATE DEFAULT NULL,
+              `default_driver_id` VARCHAR(64) DEFAULT NULL,
+              `status` VARCHAR(50) NOT NULL DEFAULT 'available',
+              `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+              `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+            CREATE TABLE IF NOT EXISTS `quotations` (
+              `id` VARCHAR(64) NOT NULL PRIMARY KEY,
+              `quote_no` VARCHAR(64) NOT NULL,
+              `customer_id` VARCHAR(64) DEFAULT NULL,
+              `customer_ref` VARCHAR(255) DEFAULT NULL,
+              `pickup_location` TEXT DEFAULT NULL,
+              `dropoff_location` TEXT DEFAULT NULL,
+              `cargo_desc` TEXT DEFAULT NULL,
+              `lorry_spec` VARCHAR(255) DEFAULT NULL,
+              `weight_desc` VARCHAR(255) DEFAULT NULL,
+              `collection_date` VARCHAR(100) DEFAULT NULL,
+              `delivery_date` VARCHAR(100) DEFAULT NULL,
+              `pickup_time` VARCHAR(100) DEFAULT NULL,
+              `dropoff_time` VARCHAR(100) DEFAULT NULL,
+              `loading_time` DATETIME DEFAULT NULL,
+              `unloading_time` DATETIME DEFAULT NULL,
+              `rate_amount` DECIMAL(12,2) DEFAULT NULL,
+              `diesel_band` VARCHAR(50) DEFAULT NULL,
+              `urgent` TINYINT(1) NOT NULL DEFAULT 0,
+              `special_instructions` TEXT DEFAULT NULL,
+              `suggested_driver` VARCHAR(255) DEFAULT NULL,
+              `notes` LONGTEXT DEFAULT NULL,
+              `raw_message` LONGTEXT DEFAULT NULL,
+              `status` VARCHAR(50) NOT NULL DEFAULT 'draft',
+              `sent_at` DATETIME DEFAULT NULL,
+              `client_confirmed_at` DATETIME DEFAULT NULL,
+              `owner_approved_at` DATETIME DEFAULT NULL,
+              `approved_by` VARCHAR(64) DEFAULT NULL,
+              `decline_reason` TEXT DEFAULT NULL,
+              `job_id` VARCHAR(64) DEFAULT NULL,
+              `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+              `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+            CREATE TABLE IF NOT EXISTS `jobs` (
+              `id` VARCHAR(64) NOT NULL PRIMARY KEY,
+              `job_no` VARCHAR(64) NOT NULL,
+              `quotation_id` VARCHAR(64) DEFAULT NULL,
+              `customer_ref` VARCHAR(255) DEFAULT NULL,
+              `customer_id` VARCHAR(64) DEFAULT NULL,
+              `lorry_id` VARCHAR(64) DEFAULT NULL,
+              `driver_id` VARCHAR(64) DEFAULT NULL,
+              `rate_amount` DECIMAL(12,2) DEFAULT 0.00,
+              `diesel_amount` DECIMAL(12,2) DEFAULT 0.00,
+              `tng_amount` DECIMAL(12,2) DEFAULT 0.00,
+              `pickup_location` TEXT DEFAULT NULL,
+              `dropoff_location` TEXT DEFAULT NULL,
+              `collection_date` VARCHAR(100) DEFAULT NULL,
+              `delivery_date` VARCHAR(100) DEFAULT NULL,
+              `loading_time` VARCHAR(100) DEFAULT NULL,
+              `unloading_time` VARCHAR(100) DEFAULT NULL,
+              `cargo_desc` TEXT DEFAULT NULL,
+              `lorry_spec` VARCHAR(255) DEFAULT NULL,
+              `weight_desc` VARCHAR(255) DEFAULT NULL,
+              `urgent` TINYINT(1) NOT NULL DEFAULT 0,
+              `special_instructions` TEXT DEFAULT NULL,
+              `notes` TEXT DEFAULT NULL,
+              `status` VARCHAR(50) NOT NULL DEFAULT 'unassigned',
+              `billed_status` VARCHAR(50) NOT NULL DEFAULT 'pending',
+              `billed_at` DATETIME DEFAULT NULL,
+              `started_at` DATETIME DEFAULT NULL,
+              `delivered_at` DATETIME DEFAULT NULL,
+              `pod_recipient` VARCHAR(255) DEFAULT NULL,
+              `pod_notes` TEXT DEFAULT NULL,
+              `pod_signature` LONGTEXT DEFAULT NULL,
+              `pod_photo` LONGTEXT DEFAULT NULL,
+              `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+              `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+            CREATE TABLE IF NOT EXISTS `approvals` (
+              `id` VARCHAR(64) NOT NULL PRIMARY KEY,
+              `ref_id` VARCHAR(64) NOT NULL,
+              `item_type` VARCHAR(50) DEFAULT 'quotation',
+              `kind` VARCHAR(50) DEFAULT 'quotation',
+              `title` VARCHAR(255) DEFAULT NULL,
+              `amount` DECIMAL(12,2) DEFAULT NULL,
+              `status` VARCHAR(50) NOT NULL DEFAULT 'waiting',
+              `requested_by` VARCHAR(255) DEFAULT NULL,
+              `flagged` TINYINT(1) NOT NULL DEFAULT 0,
+              `note` TEXT DEFAULT NULL,
+              `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+              `resolved_at` DATETIME DEFAULT NULL
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+            CREATE TABLE IF NOT EXISTS `inventory_items` (
+              `id` VARCHAR(64) NOT NULL PRIMARY KEY,
+              `item_name` VARCHAR(255) DEFAULT NULL,
+              `name` VARCHAR(255) DEFAULT NULL,
+              `sku` VARCHAR(100) DEFAULT NULL,
+              `category` VARCHAR(50) NOT NULL DEFAULT 'other',
+              `unit` VARCHAR(50) NOT NULL DEFAULT 'pcs',
+              `quantity` DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+              `quantity_on_hand` DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+              `min_quantity` DECIMAL(12,2) DEFAULT 0.00,
+              `reorder_threshold` DECIMAL(12,2) DEFAULT 0.00,
+              `cost_per_unit` DECIMAL(12,2) DEFAULT NULL,
+              `unit_cost` DECIMAL(12,2) DEFAULT NULL,
+              `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+            CREATE TABLE IF NOT EXISTS `inventory_issuances` (
+              `id` VARCHAR(64) NOT NULL PRIMARY KEY,
+              `item_id` VARCHAR(64) DEFAULT NULL,
+              `lorry_id` VARCHAR(64) DEFAULT NULL,
+              `maintenance_record_id` VARCHAR(64) DEFAULT NULL,
+              `quantity` DECIMAL(12,2) NOT NULL DEFAULT 0,
+              `unit_cost` DECIMAL(12,2) DEFAULT NULL,
+              `approval_status` VARCHAR(50) NOT NULL DEFAULT 'pending',
+              `approved_by` VARCHAR(64) DEFAULT NULL,
+              `approved_at` DATETIME DEFAULT NULL,
+              `requested_by` VARCHAR(64) DEFAULT NULL,
+              `issued_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+              `notes` TEXT DEFAULT NULL,
+              `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+            CREATE TABLE IF NOT EXISTS `inventory_receipts` (
+              `id` VARCHAR(64) NOT NULL PRIMARY KEY,
+              `item_id` VARCHAR(64) DEFAULT NULL,
+              `quantity` DECIMAL(12,2) NOT NULL DEFAULT 0,
+              `unit_cost` DECIMAL(12,2) DEFAULT NULL,
+              `received_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+              `notes` TEXT DEFAULT NULL,
+              `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+            CREATE TABLE IF NOT EXISTS `maintenance_records` (
+              `id` VARCHAR(64) NOT NULL PRIMARY KEY,
+              `lorry_id` VARCHAR(64) DEFAULT NULL,
+              `service_type` VARCHAR(255) DEFAULT NULL,
+              `description` TEXT DEFAULT NULL,
+              `workshop` VARCHAR(255) DEFAULT NULL,
+              `service_date` DATE DEFAULT NULL,
+              `next_service_due` DATE DEFAULT NULL,
+              `cost` DECIMAL(12,2) DEFAULT NULL,
+              `status` VARCHAR(50) NOT NULL DEFAULT 'completed',
+              `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+            CREATE TABLE IF NOT EXISTS `lorry_crew` (
+              `id` VARCHAR(64) NOT NULL PRIMARY KEY,
+              `lorry_id` VARCHAR(64) NOT NULL,
+              `driver_id` VARCHAR(64) NOT NULL,
+              `role` VARCHAR(50) NOT NULL DEFAULT 'crew'
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+            CREATE TABLE IF NOT EXISTS `job_crew` (
+              `id` VARCHAR(64) NOT NULL PRIMARY KEY,
+              `job_id` VARCHAR(64) NOT NULL,
+              `driver_id` VARCHAR(64) NOT NULL,
+              `role` VARCHAR(50) NOT NULL DEFAULT 'crew'
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+            CREATE TABLE IF NOT EXISTS `customer_rates` (
+              `id` VARCHAR(64) NOT NULL PRIMARY KEY,
+              `customer_id` VARCHAR(64) DEFAULT NULL,
+              `origin` VARCHAR(255) NOT NULL,
+              `destination` VARCHAR(255) NOT NULL,
+              `lorry_spec` VARCHAR(255) DEFAULT NULL,
+              `cargo_type` VARCHAR(255) DEFAULT 'General Cargo',
+              `base_rate` DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+              `extra_drop_charge` DECIMAL(12,2) DEFAULT 0.00,
+              `helper_charge` DECIMAL(12,2) DEFAULT 0.00,
+              `demurrage_hourly` DECIMAL(12,2) DEFAULT 0.00,
+              `status` VARCHAR(50) NOT NULL DEFAULT 'active',
+              `notes` TEXT DEFAULT NULL,
+              `valid_from` DATE DEFAULT NULL,
+              `valid_to` DATE DEFAULT NULL,
+              `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+            CREATE TABLE IF NOT EXISTS `customer_price_lists` (
+              `id` VARCHAR(64) NOT NULL PRIMARY KEY,
+              `customer_id` VARCHAR(64) DEFAULT NULL,
+              `zone` VARCHAR(50) DEFAULT NULL,
+              `destination` VARCHAR(255) DEFAULT NULL,
+              `client_tag` VARCHAR(255) DEFAULT NULL,
+              `note` TEXT DEFAULT NULL,
+              `tiers_json` LONGTEXT DEFAULT NULL,
+              `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+            CREATE TABLE IF NOT EXISTS `sales_invoices` (
+              `id` VARCHAR(64) NOT NULL PRIMARY KEY,
+              `invoice_no` VARCHAR(64) NOT NULL UNIQUE,
+              `customer_id` VARCHAR(64) NOT NULL,
+              `job_ids` TEXT DEFAULT NULL,
+              `invoice_date` DATE NOT NULL,
+              `due_date` DATE DEFAULT NULL,
+              `subtotal` DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+              `sst_rate` DECIMAL(6,4) DEFAULT 0.0600,
+              `sst_amount` DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+              `total_amount` DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+              `payment_status` VARCHAR(50) NOT NULL DEFAULT 'pending',
+              `payment_terms` VARCHAR(100) DEFAULT '30 Days',
+              `paid_amount` DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+              `payment_date` DATE DEFAULT NULL,
+              `payment_method` VARCHAR(100) DEFAULT NULL,
+              `payment_ref` VARCHAR(255) DEFAULT NULL,
+              `notes` TEXT DEFAULT NULL,
+              `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+              `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+            CREATE TABLE IF NOT EXISTS `customer_contacts` (
+              `id` VARCHAR(64) NOT NULL PRIMARY KEY,
+              `no` INT(11) DEFAULT NULL,
+              `customer_name` VARCHAR(255) NOT NULL,
+              `contact_person` VARCHAR(255) DEFAULT NULL,
+              `contact_no` VARCHAR(255) DEFAULT NULL,
+              `region` VARCHAR(255) DEFAULT NULL,
+              `notes` TEXT DEFAULT NULL,
+              `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+              `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        ");
+    } catch (\Throwable $e) {}
+}
+
+function seedDemoData($pdo) {
+    try {
+        $pdo->exec("SET FOREIGN_KEY_CHECKS = 0");
+
+        // 1. Staff
+        $pdo->exec("
+            INSERT INTO `staff` (`id`, `name`, `role`, `pin`, `active`) VALUES
+            ('staff-owner-1', 'Rens Admin', 'owner', '12345', 1),
+            ('staff-admin-1', 'Logistics Operations', 'admin', '12345', 1)
+            ON DUPLICATE KEY UPDATE `name`=VALUES(`name`), `pin`=VALUES(`pin`);
+        ");
+
+        // 2. Drivers (15 Drivers across 5 Fleet Types)
+        $pdo->exec("
+            INSERT INTO `drivers` (`id`, `name`, `phone`, `pin`, `ic_number`, `license_class`, `license_expiry`, `is_helper`, `status`) VALUES
+            ('drv-1', 'Ahmad Razak', '012-345 8901', '1001', '880512-10-5521', 'GDL - D', '2027-02-15', 0, 'available'),
+            ('drv-2', 'Suresh Kumar', '016-223 4589', '1002', '901103-14-5823', 'GDL - D', '2026-11-20', 0, 'available'),
+            ('drv-3', 'Muhammad Hafiz', '017-889 1234', '1003', '920315-08-6147', 'GDL - D', '2026-12-10', 0, 'available'),
+            ('drv-4', 'Tan Boon Wah', '012-678 9012', '1004', '850720-10-5349', 'GDL - E', '2027-01-18', 0, 'available'),
+            ('drv-5', 'Mohd Khairul', '013-456 7890', '1005', '870914-01-5231', 'GDL - E', '2026-10-30', 0, 'available'),
+            ('drv-6', 'Arumugam A/L Ramasamy', '019-334 5678', '1006', '830405-10-5677', 'GDL - E', '2027-03-05', 0, 'available'),
+            ('drv-7', 'Lee Chee Keong', '016-789 0123', '1007', '820819-14-5119', 'GDL - E (Bersendi)', '2026-12-28', 0, 'available'),
+            ('drv-8', 'Zulkifli bin Daud', '011-2345 6789', '1008', '860211-03-5491', 'GDL - E (Bersendi)', '2027-02-20', 0, 'available'),
+            ('drv-9', 'K. Saravanan', '018-901 2345', '1009', '891025-08-5773', 'GDL - E (Bersendi)', '2027-04-15', 0, 'available'),
+            ('drv-10', 'Roslan bin Ismail', '012-901 2345', '1010', '810617-10-5023', 'GDL - E (Bersendi / Berat)', '2027-03-12', 0, 'available'),
+            ('drv-11', 'Chong Wei Loon', '017-345 6789', '1011', '841208-14-5367', 'GDL - E (Bersendi / Berat)', '2026-11-05', 0, 'available'),
+            ('drv-12', 'Devendran A/L Muthu', '016-456 7891', '1012', '880330-02-5819', 'GDL - E (Bersendi / Berat)', '2027-01-25', 0, 'available'),
+            ('drv-13', 'Harun bin Osman', '013-890 1234', '1013', '790915-06-5381', 'GDL - E (Articulated)', '2027-05-10', 0, 'available'),
+            ('drv-14', 'Wong Kah Fai', '012-234 5679', '1014', '831122-10-5905', 'GDL - E (Articulated)', '2026-12-15', 0, 'available'),
+            ('drv-15', 'G. Tharmalingam', '018-765 4321', '1015', '800114-08-5267', 'GDL - E (Articulated)', '2027-02-28', 0, 'available')
+            ON DUPLICATE KEY UPDATE `name`=VALUES(`name`), `phone`=VALUES(`phone`), `pin`=VALUES(`pin`), `license_class`=VALUES(`license_class`), `license_expiry`=VALUES(`license_expiry`);
+        ");
+
+        // 3. Lorries (15 Lorries, 3 for each of the 5 fleet types)
+        $pdo->exec("
+            INSERT INTO `lorries` (`id`, `plate_no`, `capacity_desc`, `road_tax_expiry`, `insurance_expiry`, `permit_expiry`, `default_driver_id`, `status`) VALUES
+            ('lry-1', 'WVG 1089', '1 ton 9 ft', '2027-02-15', '2027-02-15', '2027-08-20', 'drv-1', 'available'),
+            ('lry-2', 'BNE 3491', '1 ton 9 ft', '2026-11-20', '2026-11-20', '2027-05-15', 'drv-2', 'available'),
+            ('lry-3', 'VAK 7819', '1 ton 9 ft', '2026-12-10', '2026-12-10', '2027-06-30', 'drv-3', 'available'),
+            ('lry-4', 'WQC 5217', '3 & 5 ton 17 ft', '2027-01-18', '2027-01-18', '2027-07-22', 'drv-4', 'available'),
+            ('lry-5', 'BPP 8917', '3 & 5 ton 17 ft', '2026-10-30', '2026-10-30', '2027-04-12', 'drv-5', 'available'),
+            ('lry-6', 'VCE 4317', '3 & 5 ton 17 ft', '2027-03-05', '2027-03-05', '2027-09-15', 'drv-6', 'available'),
+            ('lry-7', 'WRX 1024', '10 ton 24ft', '2026-12-28', '2026-12-28', '2027-06-18', 'drv-7', 'available'),
+            ('lry-8', 'BRT 6724', '10 ton 24ft', '2027-02-20', '2027-02-20', '2027-08-10', 'drv-8', 'available'),
+            ('lry-9', 'VDG 9224', '10 ton 24ft', '2027-04-15', '2027-04-15', '2027-10-05', 'drv-9', 'available'),
+            ('lry-10', 'WSY 1430', '14 ton 30ft', '2027-03-12', '2027-03-12', '2027-09-28', 'drv-10', 'available'),
+            ('lry-11', 'BTU 3830', '14 ton 30ft', '2026-11-05', '2026-11-05', '2027-05-20', 'drv-11', 'available'),
+            ('lry-12', 'VEH 7530', '14 ton 30ft', '2027-01-25', '2027-01-25', '2027-07-14', 'drv-12', 'available'),
+            ('lry-13', 'WTB 2040', '20 ton 40ft', '2027-05-10', '2027-05-10', '2027-11-20', 'drv-13', 'available'),
+            ('lry-14', 'BWD 8240', '20 ton 40ft', '2026-12-15', '2026-12-15', '2027-06-25', 'drv-14', 'available'),
+            ('lry-15', 'VFK 9940', '20 ton 40ft', '2027-02-28', '2027-02-28', '2027-08-30', 'drv-15', 'available')
+            ON DUPLICATE KEY UPDATE `plate_no`=VALUES(`plate_no`), `capacity_desc`=VALUES(`capacity_desc`), `default_driver_id`=VALUES(`default_driver_id`), `status`=VALUES(`status`);
+        ");
+
+        // 4. Customer Contacts (23 Contacts)
+        $pdo->exec("
+            INSERT INTO `customer_contacts` (`id`, `no`, `customer_name`, `contact_person`, `contact_no`, `region`, `notes`) VALUES
+            ('cc-1', 1, 'TOPAZ EVERGREEN SDN. BHD.', 'Mr K.H Tan, Mawi', 'H/P: 012-379 5663 / H/P: 012-6462011', 'KL / SHAH ALAM / KLANG', ''),
+            ('cc-2', 2, 'SEMPURNA IMPEX SDN BHD', 'Ms Kala', 'H/P: 016-363 5072 / Tel: 03-6157 8614 / 03-6157 0150', 'KL / SHAH ALAM / KLANG', ''),
+            ('cc-3', 3, 'SRI AMAN VENTURES SDN.BHD.', 'Mr Chong', 'Off: 03-51627988 / H/P: 016-2134279', 'KL / SHAH ALAM / KLANG', ''),
+            ('cc-4', 4, 'MRA', 'Mr Tan', 'H/P: 012-6185859', 'KL / SHAH ALAM / KLANG', ''),
+            ('cc-5', 5, 'KANLA SOLUTIONS', 'Mr Lawrance', 'H/P: 012-2006981', 'KL / SHAH ALAM / KLANG', ''),
+            ('cc-6', 6, 'BEST ULTIMATE PLASTICS', 'Ms Sophia', 'H/P: 014-3301488', 'KL / SHAH ALAM / KLANG', ''),
+            ('cc-7', 7, 'HONG Q', 'Mr Hoe', 'H/P: 012-6117611', 'KL / SHAH ALAM / KLANG', ''),
+            ('cc-8', 8, 'SPEEDEX', 'Mr Jana', 'H/P: 012-3535394', 'KL / SHAH ALAM / KLANG', ''),
+            ('cc-9', 9, 'MASCON BETRRONY', 'Mr Mascon', 'H/P: 016-2191367', 'KL / SHAH ALAM / KLANG', ''),
+            ('cc-10', 10, 'Q TRON', 'Mr X', 'H/P: 012-7202099', 'KL / SHAH ALAM / KLANG', ''),
+            ('cc-11', 11, 'PKFZ', 'Mr Muru', 'H/P: 018-3898540', 'KL / SHAH ALAM / KLANG', ''),
+            ('cc-12', 12, 'MS KOO', 'Ms Koo', 'H/P: 017-3906551', 'KL / SHAH ALAM / KLANG', ''),
+            ('cc-13', 13, 'NEW POINT MANAFACTUTRING', 'Mr Lim', 'H/P: 012-4544241', 'KL / SHAH ALAM / KLANG', ''),
+            ('cc-14', 14, 'SHANMUGAM', 'Mr Shanmugam', 'H/P: 012-3315407', 'KL / SHAH ALAM / KLANG', ''),
+            ('cc-15', 15, 'GABUGAN PENAGA', 'Azrin TNb', 'H/P: 012-2753384', 'KL / SHAH ALAM / KLANG', ''),
+            ('cc-16', 16, 'PERFECT LOGISTICS', 'Mr Alvan Tan', 'H/P: 012-2912525', 'KL / SHAH ALAM / KLANG', ''),
+            ('cc-17', 17, 'YARINI', 'Mr X', 'H/P: 012-2096747', 'KL / SHAH ALAM / KLANG', ''),
+            ('cc-18', 18, 'BD AGRICULTURE', 'Ms Show Peng', 'H/P: 017-3355993', 'KL / SHAH ALAM / KLANG', ''),
+            ('cc-19', 19, 'GPS', 'Mr Hari', 'H/P: 012-3490585', 'KL / SHAH ALAM / KLANG', ''),
+            ('cc-20', 20, 'CHER', 'Mr Cher', 'H/P: 016-8780804', 'MELAKA', ''),
+            ('cc-21', 21, 'MERIAHTEK', 'Mr Richard', 'H/P: 017-6676262', 'MELAKA', ''),
+            ('cc-22', 22, 'LIKOM', 'Ms Fara', 'H/P: 012-3831046', 'MELAKA', ''),
+            ('cc-23', 23, 'SAFECHEM', 'Mr Damon', 'H/P: 012-3306326', 'MELAKA', '')
+            ON DUPLICATE KEY UPDATE `customer_name`=VALUES(`customer_name`), `contact_person`=VALUES(`contact_person`), `contact_no`=VALUES(`contact_no`);
+        ");
+
+        // 5. Customer Price Lists (12 Core Standard Logistics Routes)
+        $pdo->exec("
+            INSERT INTO `customer_price_lists` (`id`, `item_no`, `pickup_zone`, `pickup_location`, `drop_zone`, `drop_location`, `zone`, `destination`, `client_tag`, `code_word`, `note`, `tiers_json`) VALUES
+            ('cpl-1', '1', 'Zone A', 'Senawang', 'Zone A', 'Nilai', 'Zone A', 'Senawang to Nilai', 'Plastictecnic', '', '', '[{\"diesel_band\":\"1.50 - 2.00\",\"ton5_17ft\":230,\"ton10_24ft\":260,\"ft30\":280,\"ft40\":380},{\"diesel_band\":\"2.00 - 2.18\",\"ton5_17ft\":240,\"ton10_24ft\":280,\"ft30\":300,\"ft40\":400}]'),
+            ('cpl-2', '2', 'Zone A', 'Senawang', 'Zone B', 'Bangi', 'Zone B', 'Senawang to Bangi', 'SONY', '', '', '[{\"diesel_band\":\"1.50 - 2.00\",\"ton5_17ft\":200,\"ton10_24ft\":250,\"ft30\":300,\"ft40\":480},{\"diesel_band\":\"2.00 - 2.18\",\"ton5_17ft\":210,\"ton10_24ft\":280,\"ft30\":320,\"ft40\":500}]'),
+            ('cpl-3', '3', 'Zone A', 'Senawang', 'Zone A', 'Melaka', 'Zone A', 'Senawang to Melaka', '', '', '', '[{\"diesel_band\":\"2.00 - 2.18\",\"ton5_17ft\":320,\"ton10_24ft\":400,\"ft30\":450,\"ft40\":500}]'),
+            ('cpl-4', '4', 'Zone A', 'Senawang', 'Zone A', 'Shah Alam', 'Zone A', 'Senawang to Shah Alam', 'Panasonic', '', '', '[{\"diesel_band\":\"1.50 - 2.00\",\"ton5_17ft\":320,\"ton10_24ft\":410,\"ft30\":450,\"ft40\":580},{\"diesel_band\":\"2.00 - 2.18\",\"ton5_17ft\":340,\"ton10_24ft\":430,\"ft30\":470,\"ft40\":600}]'),
+            ('cpl-5', '5', 'Zone A', 'Senawang', 'Zone C', 'Klang', 'Zone C', 'Senawang to Klang', 'SEMA / PANASONIC', '', '#waiting charges - after 2 hours, per hours RM50.00', '[{\"diesel_band\":\"1.50 - 2.00\",\"ton5_17ft\":330,\"ton10_24ft\":430,\"ft30\":480,\"ft40\":624},{\"diesel_band\":\"2.00 - 2.18\",\"ton5_17ft\":340,\"ton10_24ft\":450,\"ft30\":550,\"ft40\":650}]'),
+            ('cpl-6', '6', 'Zone A', 'Senawang', 'Zone A', 'Sg.Buloh', 'Zone A', 'Senawang to Sg.Buloh', 'Daikin', '', '', '[{\"diesel_band\":\"1.50 - 2.00\",\"ton5_17ft\":380,\"ton10_24ft\":565,\"ft30\":585,\"ft40\":700},{\"diesel_band\":\"2.00 - 2.18\",\"ton5_17ft\":390,\"ton10_24ft\":580,\"ft30\":600,\"ft40\":700}]'),
+            ('cpl-7', '7', 'Zone B', 'Senawang', 'Zone B', 'Thermal and Drain Pan', 'Zone B', 'Thermal and Drain Pan', 'Daikin', '5384, 6729, 5636, 2579, 0419, 4667, 2830', '', '[{\"diesel_band\":\"1.50 - 2.00\",\"ton5_17ft\":380,\"ton10_24ft\":565,\"ft30\":610,\"ft40\":725},{\"diesel_band\":\"2.00 - 2.18\",\"ton5_17ft\":390,\"ton10_24ft\":580,\"ft30\":625,\"ft40\":725}]'),
+            ('cpl-8', '8', 'Zone A', 'Senawang', 'Zone D', 'Puncak Alam', 'Zone D', 'Senawang to Puncak Alam', '', '', '', '[{\"diesel_band\":\"1.50 - 2.00\",\"ton5_17ft\":420,\"ton10_24ft\":620,\"ft30\":650,\"ft40\":800},{\"diesel_band\":\"2.00 - 2.18\",\"ton5_17ft\":450,\"ton10_24ft\":650,\"ft30\":750,\"ft40\":850}]'),
+            ('cpl-9', '9', 'Zone A', 'Senawang', 'Zone A', 'Bkt Beruntung', 'Zone A', 'Senawang to Bkt Beruntung', 'APM', '', '', '[{\"diesel_band\":\"1.50 - 2.00\",\"ton5_17ft\":420,\"ton10_24ft\":620,\"ft30\":650,\"ft40\":850},{\"diesel_band\":\"2.00 - 2.18\",\"ton5_17ft\":450,\"ton10_24ft\":650,\"ft30\":670,\"ft40\":880}]'),
+            ('cpl-10', '10', 'Zone A', 'Senawang', 'Zone B', 'Tanjung Malim', 'Zone B', 'Senawang to Tanjung Malim', '', '', '', '[{\"diesel_band\":\"1.50 - 2.00\",\"ton5_17ft\":470,\"ton10_24ft\":670,\"ft30\":700,\"ft40\":900},{\"diesel_band\":\"2.00 - 2.18\",\"ton5_17ft\":500,\"ton10_24ft\":700,\"ft30\":720,\"ft40\":930}]'),
+            ('cpl-11', '11', 'Zone A', 'Senawang', 'Zone C', 'Lojing, Kelantan', 'Zone C', 'Senawang to Lojing, Kelantan', '', '', '', '[{\"diesel_band\":\"1.50 - 2.00\",\"ton5_17ft\":1300,\"ton10_24ft\":1500,\"ft30\":1800,\"ft40\":2300},{\"diesel_band\":\"2.00 - 2.18\",\"ton5_17ft\":1400,\"ton10_24ft\":1700,\"ft30\":1900,\"ft40\":2400}]'),
+            ('cpl-12', '12', 'Zone A', 'Senawang', 'Zone A', 'Dropoint', 'Zone A', 'Dropoint', '', '', '', '[{\"diesel_band\":\"Fixed\",\"ton5_17ft\":70,\"ton10_24ft\":80,\"ft30\":100,\"ft40\":100}]')
+            ON DUPLICATE KEY UPDATE `destination`=VALUES(`destination`), `pickup_location`=VALUES(`pickup_location`), `drop_location`=VALUES(`drop_location`), `tiers_json`=VALUES(`tiers_json`);
+        ");
+
+        $pdo->exec("SET FOREIGN_KEY_CHECKS = 1");
+    } catch (\Throwable $e) {}
+}
+
+// Auto seed default demo records if not yet populated
+try {
+    $staffCount = (int)$pdo->query("SELECT COUNT(*) FROM `staff`")->fetchColumn();
+    $drvCount = (int)$pdo->query("SELECT COUNT(*) FROM `drivers`")->fetchColumn();
+    if ($staffCount === 0 || $drvCount === 0) {
+        seedDemoData($pdo);
+    }
+} catch (\Throwable $e) {}
+
+// Helper: Ensure columns exist in table dynamically
+function ensureColumnsExist($pdo, $table, $keys) {
+    try {
+        $stmt = $pdo->query("SHOW COLUMNS FROM `$table`");
+        $existingCols = [];
+        while ($row = $stmt->fetch()) {
+            $existingCols[strtolower($row['Field'])] = true;
+        }
+
+        foreach ($keys as $k) {
+            $safeCol = preg_replace('/[^a-zA-Z0-9_]/', '', $k);
+            if (!$safeCol) continue;
+            if (!isset($existingCols[strtolower($safeCol)])) {
+                $pdo->exec("ALTER TABLE `$table` ADD COLUMN `$safeCol` TEXT DEFAULT NULL");
+                $existingCols[strtolower($safeCol)] = true;
+            }
+        }
+    } catch (\Throwable $e) {}
+}
+
+// Helper: Sanitize row data types for MySQL
+function sanitizeRowData($rowData) {
+    $clean = [];
+    foreach ($rowData as $k => $v) {
+        $safeCol = preg_replace('/[^a-zA-Z0-9_]/', '', $k);
+        if (!$safeCol) continue;
+
+        if (is_bool($v)) {
+            $clean[$safeCol] = $v ? 1 : 0;
+        } elseif ($v === '' || $v === null) {
+            $clean[$safeCol] = null;
+        } elseif (is_string($v) && preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/', $v)) {
+            // Convert ISO-8601 string to MySQL DATETIME
+            $ts = strtotime($v);
+            $clean[$safeCol] = $ts ? date('Y-m-d H:i:s', $ts) : $v;
+        } elseif (is_array($v) || is_object($v)) {
+            $clean[$safeCol] = json_encode($v);
+        } else {
+            $clean[$safeCol] = $v;
+        }
+    }
+    return $clean;
+}
+
+ensureTablesExist($pdo);
+
+$table = isset($_GET['table']) ? $_GET['table'] : '';
+
+try {
+    if ($_SERVER['REQUEST_METHOD'] === 'GET') {
+        if ($table === 'status' || (isset($_GET['action']) && $_GET['action'] === 'status')) {
+            echo json_encode([
+                'connected' => true,
+                'host' => $host,
+                'port' => 3306,
+                'database' => $db
+            ]);
+            exit();
+        }
+
+        if ((isset($_GET['action']) && in_array($_GET['action'], ['seed_demo', 'seed', 'seed_data'])) ||
+            (isset($_POST['action']) && in_array($_POST['action'], ['seed_demo', 'seed', 'seed_data']))) {
+            seedDemoData($pdo);
+            echo json_encode(['success' => true, 'message' => 'All demo data seeded successfully into MySQL.']);
+            exit();
+        }
+
+        if ((isset($_GET['action']) && in_array($_GET['action'], ['clear_quotes_and_jobs', 'clear_quotes', 'clear_jobs'])) ||
+            (isset($_POST['action']) && in_array($_POST['action'], ['clear_quotes_and_jobs', 'clear_quotes', 'clear_jobs']))) {
+            $pdo->exec("SET FOREIGN_KEY_CHECKS = 0");
+            $tablesToDelete = ['job_crew', 'jobs', 'quotations', 'approvals', 'sales_invoices'];
+            foreach ($tablesToDelete as $t) {
+                try { $pdo->exec("DELETE FROM `$t`"); } catch (\Throwable $e) {}
+            }
+            $pdo->exec("SET FOREIGN_KEY_CHECKS = 1");
+            echo json_encode(['success' => true, 'message' => 'All quotation and job records cleared.']);
+            exit();
+        }
+
+        if ((isset($_GET['action']) && in_array($_GET['action'], ['clear_all_data', 'wipe_database', 'clear'])) || 
+            (isset($_POST['action']) && in_array($_POST['action'], ['clear_all_data', 'wipe_database', 'clear']))) {
+            $pdo->exec("SET FOREIGN_KEY_CHECKS = 0");
+            $tablesToDelete = [
+                'job_crew', 'inventory_issuances', 'inventory_receipts', 'maintenance_records',
+                'jobs', 'quotations', 'approvals', 'lorry_crew',
+                'lorries', 'drivers', 'customers', 'inventory_items',
+                'customer_rates', 'customer_price_lists', 'sales_invoices',
+                'customer_contacts'
+            ];
+            foreach ($tablesToDelete as $t) {
+                try { $pdo->exec("DELETE FROM `$t`"); } catch (\Throwable $e) {}
+            }
+            try {
+                $pdo->exec("DELETE FROM `staff`");
+                $pdo->exec("INSERT INTO `staff` (`id`, `name`, `username`, `role`, `pin`, `active`) VALUES ('staff-owner-1', 'Rens Admin', 'Dynamic', 'owner', '12345', 1), ('staff-admin-1', 'Logistics Operations', 'Admin', 'admin', '12345', 1)");
+            } catch (\Throwable $e) {}
+            $pdo->exec("SET FOREIGN_KEY_CHECKS = 1");
+            echo json_encode(['success' => true, 'message' => 'All database tables successfully cleared and reset.']);
+            exit();
+        }
+
+        if (!$table || !in_array($table, $allowedTables)) {
+            http_response_code(400);
+            echo json_encode(['error' => 'Invalid or missing table parameter']);
+            exit();
+        }
+
+        $sql = "SELECT * FROM `$table`";
+        $params = [];
+        $whereClauses = [];
+
+        $whereParam = isset($_GET['where']) ? $_GET['where'] : null;
+        $parsedWhere = [];
+        if ($whereParam) {
+            $decoded = json_decode($whereParam, true);
+            if (is_array($decoded)) $parsedWhere = $decoded;
+        }
+
+        if (!empty($parsedWhere)) {
+            foreach ($parsedWhere as $cond) {
+                if (isset($cond['col']) && isset($cond['val'])) {
+                    $op = isset($cond['op']) && in_array(strtoupper($cond['op']), ['=', '!=', '<', '>', '<=', '>=', 'LIKE']) ? strtoupper($cond['op']) : '=';
+                    $safeCol = preg_replace('/[^a-zA-Z0-9_]/', '', $cond['col']);
+                    if ($op === 'LIKE') {
+                        $whereClauses[] = "`$safeCol` LIKE ?";
+                        $params[] = '%' . $cond['val'] . '%';
+                    } else {
+                        $whereClauses[] = "`$safeCol` $op ?";
+                        $params[] = $cond['val'];
+                    }
+                }
+            }
+        } else {
+            $reserved = ['table', 'where', 'order_by', 'order_dir', 'limit', 'action'];
+            foreach ($_GET as $key => $val) {
+                if (!in_array($key, $reserved) && $val !== null) {
+                    $safeCol = preg_replace('/[^a-zA-Z0-9_]/', '', $key);
+                    $whereClauses[] = "`$safeCol` = ?";
+                    $params[] = $val;
+                }
+            }
+        }
+
+        if (!empty($whereClauses)) {
+            $sql .= " WHERE " . implode(' AND ', $whereClauses);
+        }
+
+        if (isset($_GET['order_by']) && $_GET['order_by']) {
+            $safeOrderCol = preg_replace('/[^a-zA-Z0-9_]/', '', $_GET['order_by']);
+            $orderDir = (isset($_GET['order_dir']) && strtoupper($_GET['order_dir']) === 'DESC') ? 'DESC' : 'ASC';
+            $sql .= " ORDER BY `$safeOrderCol` $orderDir";
+        }
+
+        if (isset($_GET['limit']) && is_numeric($_GET['limit'])) {
+            $sql .= " LIMIT " . intval($_GET['limit']);
+        }
+
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute($params);
+        $rows = $stmt->fetchAll();
+        echo json_encode(['data' => $rows]);
+        exit();
+    }
+
+    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+        $input = json_decode(file_get_contents('php://input'), true);
+        $targetTable = $table ?: (isset($input['table']) ? $input['table'] : '');
+        $data = isset($input['data']) ? $input['data'] : null;
+
+        if (!$targetTable || !in_array($targetTable, $allowedTables) || !$data) {
+            http_response_code(400);
+            echo json_encode(['error' => 'Invalid table or missing payload data']);
+            exit();
+        }
+
+        $records = isset($data[0]) && is_array($data[0]) ? $data : [$data];
+        $insertedResults = [];
+
+        foreach ($records as $item) {
+            $rowData = sanitizeRowData($item);
+            if (!isset($rowData['id']) || empty($rowData['id'])) {
+                $prefixMap = [
+                    'customers' => 'cust',
+                    'quotations' => 'quot',
+                    'jobs' => 'job',
+                    'approvals' => 'appr',
+                    'drivers' => 'drv',
+                    'lorries' => 'lry',
+                    'staff' => 'stf',
+                    'inventory_items' => 'item',
+                    'inventory_issuances' => 'iss',
+                    'inventory_receipts' => 'rcpt',
+                    'maintenance_records' => 'maint',
+                    'customer_rates' => 'rate',
+                    'customer_price_lists' => 'cpl',
+                    'sales_invoices' => 'inv'
+                ];
+                $pfx = isset($prefixMap[$targetTable]) ? $prefixMap[$targetTable] : 'rec';
+                $rowData['id'] = $pfx . '_' . substr(md5(uniqid(rand(), true)), 0, 10);
+            }
+
+            $keys = array_keys($rowData);
+            ensureColumnsExist($pdo, $targetTable, $keys);
+
+            $escapedKeys = array_map(function($k) { return "`" . preg_replace('/[^a-zA-Z0-9_]/', '', $k) . "`"; }, $keys);
+            $placeholders = array_fill(0, count($keys), '?');
+            $updateAssignments = array_map(function($k) {
+                $safe = preg_replace('/[^a-zA-Z0-9_]/', '', $k);
+                return "`$safe` = VALUES(`$safe`)";
+            }, $keys);
+
+            $sql = "INSERT INTO `$targetTable` (" . implode(', ', $escapedKeys) . ") VALUES (" . implode(', ', $placeholders) . ") ON DUPLICATE KEY UPDATE " . implode(', ', $updateAssignments);
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute(array_values($rowData));
+
+            $insertedResults[] = ['id' => $rowData['id'], 'insertId' => $pdo->lastInsertId()];
+        }
+
+        echo json_encode(['success' => true, 'data' => $insertedResults]);
+        exit();
+    }
+
+    if ($_SERVER['REQUEST_METHOD'] === 'PUT') {
+        $input = json_decode(file_get_contents('php://input'), true);
+        $targetTable = $table ?: (isset($input['table']) ? $input['table'] : '');
+        $data = isset($input['data']) ? $input['data'] : null;
+        $where = isset($input['where']) ? $input['where'] : null;
+        $targetId = isset($input['id']) ? $input['id'] : (isset($_GET['id']) ? $_GET['id'] : (isset($data['id']) ? $data['id'] : null));
+
+        if (!$targetTable || !in_array($targetTable, $allowedTables) || !$data || !is_array($data)) {
+            http_response_code(400);
+            echo json_encode(['error' => 'Invalid table or missing update data']);
+            exit();
+        }
+
+        $cleanData = sanitizeRowData($data);
+        $keys = array_keys($cleanData);
+        ensureColumnsExist($pdo, $targetTable, $keys);
+
+        $setClauses = [];
+        $setValues = [];
+        foreach ($cleanData as $k => $v) {
+            $safeK = preg_replace('/[^a-zA-Z0-9_]/', '', $k);
+            $setClauses[] = "`$safeK` = ?";
+            $setValues[] = $v;
+        }
+
+        $whereClauses = [];
+        $whereValues = [];
+        if ($targetId) {
+            $whereClauses[] = "`id` = ?";
+            $whereValues[] = $targetId;
+        } elseif (is_array($where) && !empty($where)) {
+            foreach ($where as $cond) {
+                if (isset($cond['col']) && isset($cond['val'])) {
+                    $safeCol = preg_replace('/[^a-zA-Z0-9_]/', '', $cond['col']);
+                    $whereClauses[] = "`$safeCol` = ?";
+                    $whereValues[] = $cond['val'];
+                }
+            }
+        }
+
+        if (empty($whereClauses)) {
+            http_response_code(400);
+            echo json_encode(['error' => 'Where condition or id required for update']);
+            exit();
+        }
+
+        $sql = "UPDATE `$targetTable` SET " . implode(', ', $setClauses) . " WHERE " . implode(' AND ', $whereClauses);
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute(array_merge($setValues, $whereValues));
+
+        echo json_encode(['success' => true, 'affectedRows' => $stmt->rowCount()]);
+        exit();
+    }
+
+    if ($_SERVER['REQUEST_METHOD'] === 'DELETE') {
+        $input = json_decode(file_get_contents('php://input'), true);
+        $targetTable = $table ?: (isset($input['table']) ? $input['table'] : '');
+        $where = isset($input['where']) ? $input['where'] : null;
+        $targetId = isset($input['id']) ? $input['id'] : (isset($_GET['id']) ? $_GET['id'] : null);
+
+        if (!$targetTable || !in_array($targetTable, $allowedTables)) {
+            http_response_code(400);
+            echo json_encode(['error' => 'Invalid table']);
+            exit();
+        }
+
+        $whereClauses = [];
+        $whereValues = [];
+        $isClearAll = (isset($input['clear_all']) && $input['clear_all']) || (isset($_GET['clear_all']) && $_GET['clear_all']);
+
+        if ($targetId) {
+            $whereClauses[] = "`id` = ?";
+            $whereValues[] = $targetId;
+        } elseif (is_array($where) && !empty($where)) {
+            foreach ($where as $cond) {
+                if (isset($cond['col']) && isset($cond['val'])) {
+                    $safeCol = preg_replace('/[^a-zA-Z0-9_]/', '', $cond['col']);
+                    $op = isset($cond['op']) && in_array(strtoupper($cond['op']), ['=', '!=', '<>', '<', '>', '<=', '>=', 'LIKE']) ? strtoupper($cond['op']) : '=';
+                    if ($op === 'LIKE') {
+                        $whereClauses[] = "`$safeCol` LIKE ?";
+                        $whereValues[] = '%' . $cond['val'] . '%';
+                    } else {
+                        $whereClauses[] = "`$safeCol` $op ?";
+                        $whereValues[] = $cond['val'];
+                    }
+                }
+            }
+        }
+
+        if (empty($whereClauses) && !$isClearAll) {
+            http_response_code(400);
+            echo json_encode(['error' => 'Where condition, id, or clear_all required for delete']);
+            exit();
+        }
+
+        $sql = "DELETE FROM `$targetTable`" . (empty($whereClauses) ? "" : (" WHERE " . implode(' AND ', $whereClauses)));
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute($whereValues);
+
+        echo json_encode(['success' => true, 'affectedRows' => $stmt->rowCount()]);
+        exit();
+    }
+
+    http_response_code(405);
+    echo json_encode(['error' => 'Method not allowed']);
+} catch (\Throwable $e) {
+    http_response_code(200);
+    echo json_encode(['error' => $e->getMessage()]);
+}
+?>
