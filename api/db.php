@@ -384,7 +384,6 @@ function ensureLongTextColumns($pdo) {
         } catch (\Throwable $e) {}
     }
 }
-
 function ensureDefaultAdmin($pdo) {
     try {
         $staffCount = (int)$pdo->query("SELECT COUNT(*) FROM `staff`")->fetchColumn();
