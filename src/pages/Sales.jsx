@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { sb, fmtMoney, fmtDate, daysUntil, deduplicateJobs, subscribeTable, getStorageData } from '../lib/supabase';
 import { useToast } from '../context/ToastContext';
+import Pagination from '../components/common/Pagination';
 import {
   Search,
   Plus,
@@ -148,6 +149,22 @@ export function isSameDay(d1, d2) {
   );
 }
 
+export function isWithinDays(d, days = 7) {
+  if (!d) return false;
+  const now = new Date();
+  const diffMs = Math.abs(now.getTime() - d.getTime());
+  const diffDays = diffMs / (1000 * 60 * 60 * 24);
+  return diffDays <= days;
+}
+
+export function isSameMonth(d1, d2) {
+  if (!d1 || !d2) return false;
+  return (
+    d1.getFullYear() === d2.getFullYear() &&
+    d1.getMonth() === d2.getMonth()
+  );
+}
+
 export function matchesPeriodForDate(rawDate, period) {
   if (!period || period === 'all') return true;
   if (!rawDate) return false;
@@ -158,15 +175,10 @@ export function matchesPeriodForDate(rawDate, period) {
     return isSameDay(d, now);
   }
   if (period === 'weekly') {
-    const diffMs = Math.abs(now.getTime() - d.getTime());
-    const diffDays = diffMs / (1000 * 60 * 60 * 24);
-    return diffDays <= 7;
+    return isWithinDays(d, 7);
   }
   if (period === 'monthly') {
-    return (
-      d.getFullYear() === now.getFullYear() &&
-      d.getMonth() === now.getMonth()
-    );
+    return isSameMonth(d, now);
   }
   return true;
 }
@@ -174,40 +186,32 @@ export function matchesPeriodForDate(rawDate, period) {
 export function matchesPeriod(job, period) {
   if (!period || period === 'all') return true;
   const now = new Date();
-
-  // If job is currently active (Assigned or In Transit), it counts towards active sales
-  const isActive = Boolean(job && (job.status === 'assigned' || job.status === 'in_transit'));
+  const jDate = parseJobDate(job);
 
   if (period === 'daily') {
-    // Active jobs assigned/running count towards today's sales
-    if (isActive) return true;
-
-    // Check if created today
-    if (job.created_at) {
-      const cDate = new Date(job.created_at);
-      if (!isNaN(cDate.getTime()) && isSameDay(cDate, now)) return true;
-    }
-
-    // Check parsed date
-    const jDate = parseJobDate(job);
-    return isSameDay(jDate, now);
+    // Check if delivery or collection was done/scheduled today
+    if (isSameDay(jDate, now)) return true;
+    if (job.delivered_at && isSameDay(parseRecordDate(job.delivered_at), now)) return true;
+    if (job.delivery_date && isSameDay(parseRecordDate(job.delivery_date), now)) return true;
+    if (job.collection_date && isSameDay(parseRecordDate(job.collection_date), now)) return true;
+    if (job.created_at && isSameDay(parseRecordDate(job.created_at), now)) return true;
+    return false;
   }
 
   if (period === 'weekly') {
-    if (isActive) return true;
-    const jDate = parseJobDate(job);
-    const diffMs = Math.abs(now.getTime() - jDate.getTime());
-    const diffDays = diffMs / (1000 * 60 * 60 * 24);
-    return diffDays <= 7;
+    if (isWithinDays(jDate, 7)) return true;
+    if (job.delivered_at && isWithinDays(parseRecordDate(job.delivered_at), 7)) return true;
+    if (job.delivery_date && isWithinDays(parseRecordDate(job.delivery_date), 7)) return true;
+    if (job.collection_date && isWithinDays(parseRecordDate(job.collection_date), 7)) return true;
+    return false;
   }
 
   if (period === 'monthly') {
-    if (isActive) return true;
-    const jDate = parseJobDate(job);
-    return (
-      jDate.getFullYear() === now.getFullYear() &&
-      jDate.getMonth() === now.getMonth()
-    );
+    if (isSameMonth(jDate, now)) return true;
+    if (job.delivered_at && isSameMonth(parseRecordDate(job.delivered_at), now)) return true;
+    if (job.delivery_date && isSameMonth(parseRecordDate(job.delivery_date), now)) return true;
+    if (job.collection_date && isSameMonth(parseRecordDate(job.collection_date), now)) return true;
+    return false;
   }
 
   return true;
@@ -228,7 +232,13 @@ export default function Sales() {
       const saved = localStorage.getItem('rens_fleet_sales_records_v10');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) return parsed;
+        if (Array.isArray(parsed)) {
+          return parsed.filter(r => {
+            const plate = String(r?.plate_no || '');
+            const id = String(r?.id || '');
+            return !plate.includes('lorry-001') && !id.includes('lorry-001') && !plate.toLowerCase().startsWith('lorry #');
+          });
+        }
       }
     } catch (_) { }
     return [];
@@ -255,6 +265,12 @@ export default function Sales() {
   const [periodFilter, setPeriodFilter] = useState('daily'); // 'daily' | 'weekly' | 'monthly' | 'all'
   const [zoneFilter, setZoneFilter] = useState('all'); // 'all' | 'Zone A' | 'Zone B' | 'Zone C' | 'Zone D'
   const [statusFilter, setStatusFilter] = useState('all'); // 'all' | 'Available' | 'On Job' | 'In Transit' | 'Maintenance' | 'Standby'
+  const [page, setPage] = useState(1);
+  const pageSize = 10;
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, zoneFilter, statusFilter, periodFilter]);
 
   // Modal States
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -370,7 +386,7 @@ export default function Sales() {
       else if (job.lorry_id) {
         const matched = dbLorries.find(l => String(l.id) === String(job.lorry_id) || norm(l.plate_no) === norm(job.lorry_id));
         if (matched?.plate_no) plate = matched.plate_no;
-        else if (!String(job.lorry_id).startsWith('lorry-') && !String(job.lorry_id).startsWith('live_')) {
+        else if (!String(job.lorry_id).startsWith('lorry-') && !String(job.lorry_id).startsWith('live_') && !String(job.lorry_id).startsWith('lry-')) {
           plate = job.lorry_id;
         }
       }
@@ -378,19 +394,23 @@ export default function Sales() {
         const matched = dbLorries.find(l => norm(l.plate_no) === norm(job.lorry_spec));
         if (matched?.plate_no) plate = matched.plate_no;
       }
-      if (!plate && job.lorry_id) {
+      if (!plate && job.lorry_id && !String(job.lorry_id).startsWith('lorry-') && !String(job.lorry_id).startsWith('lry-')) {
         plate = job.lorry_id;
       }
+
+      if (!plate || plate.includes('lorry-001') || plate.toLowerCase().startsWith('lorry #')) return;
 
       const entry = getOrInitLorry(plate);
       if (!entry) return;
 
       const isMatch = matchesPeriod(job, periodFilter);
       const rate = parseFloat(job.rate_amount) || 0;
-      let dCost = parseFloat(job.diesel_expense !== undefined ? job.diesel_expense : job.diesel_cost) || 0;
+      let dCost = parseFloat(job.diesel_expense !== undefined ? job.diesel_expense : (job.diesel_cost !== undefined ? job.diesel_cost : job.diesel_amount)) || 0;
       let sCost = parseFloat(job.driver_salary) || 0;
-      let tCost = parseFloat(job.toll_charges !== undefined ? job.toll_charges : job.tng_cost) || 0;
-      let lCost = parseFloat(job.loading_unloading_charges) || 0;
+      let tCost = parseFloat(job.toll_charges !== undefined ? job.toll_charges : (job.tng_cost !== undefined ? job.tng_cost : job.tng_amount)) || 0;
+      let loadCost = parseFloat(job.loading_charges) || 0;
+      let unloadCost = parseFloat(job.unloading_charges) || 0;
+      let lCost = (loadCost + unloadCost > 0) ? (loadCost + unloadCost) : (parseFloat(job.loading_unloading_charges) || 0);
       let mCost = parseFloat(job.maintenance_cost) || 0;
       let customCost = 0;
       if (Array.isArray(job.custom_expenses)) {
@@ -437,6 +457,8 @@ export default function Sales() {
         diesel_cost: dCost,
         driver_salary: sCost,
         tng_cost: tCost,
+        loading_charges: loadCost,
+        unloading_charges: unloadCost,
         loading_unloading_charges: lCost,
         maintenance_cost: mCost,
         custom_expenses: job.custom_expenses,
@@ -460,6 +482,8 @@ export default function Sales() {
           plate = m.lorry_id;
         }
       }
+
+      if (!plate || plate.includes('lorry-001') || plate.toLowerCase().startsWith('lorry #')) return;
 
       const entry = getOrInitLorry(plate, m.status === 'in_progress' ? 'Maintenance' : 'Available');
       if (!entry) return;
@@ -518,9 +542,43 @@ export default function Sales() {
   // Merge fleet records with live assigned & delivered orders & statuses
   const mergedSalesRecords = useMemo(() => {
     const existingPlates = new Set();
-    const list = fleetRecords.map((r, idx) => {
+    const allSourceLorries = [];
+
+    // 1. Add from fleetRecords
+    (fleetRecords || []).forEach(r => {
+      if (r && r.plate_no) {
+        const pNorm = norm(r.plate_no);
+        if (!existingPlates.has(pNorm)) {
+          existingPlates.add(pNorm);
+          allSourceLorries.push(r);
+        }
+      }
+    });
+
+    // 2. Add from dbLorries if not in fleetRecords
+    (dbLorries || []).forEach(l => {
+      if (l && l.plate_no) {
+        const pNorm = norm(l.plate_no);
+        if (!existingPlates.has(pNorm)) {
+          existingPlates.add(pNorm);
+          allSourceLorries.push({
+            id: l.id || `lry_${pNorm}`,
+            plate_no: l.plate_no,
+            target: parseFloat(l.monthly_target || l.target) || 20000,
+            status: l.status ? (l.status.charAt(0).toUpperCase() + l.status.slice(1).replace('_', ' ')) : 'Available',
+            zone: l.zone || 'Zone A',
+            baseline_sales: 0,
+            baseline_expenses: 0
+          });
+        }
+      }
+    });
+
+    // 3. Process each lorry with its stats for the active period
+    const list = allSourceLorries.map((r, idx) => {
       const pNorm = norm(r.plate_no);
-      existingPlates.add(pNorm);
+      const matchedDbLorry = (dbLorries || []).find(l => norm(l.plate_no) === pNorm);
+      const lorryTarget = parseFloat(r.target || matchedDbLorry?.monthly_target || matchedDbLorry?.target) || 20000;
 
       const live = jobStatsByLorry[pNorm] || {
         plate_no: r.plate_no,
@@ -537,30 +595,31 @@ export default function Sales() {
         latest_zone: null,
         latest_destination: null,
         latest_at: null,
-        active_status: 'Available',
+        active_status: r.status || 'Available',
         jobs: [],
         maintenance_records: [],
         period_maintenance_records: []
       };
 
-      const rBaselineSales = periodFilter === 'all' || periodFilter === 'monthly' ? (Number(r.baseline_sales) || 0) : 0;
-      const rBaselineExp = periodFilter === 'all' || periodFilter === 'monthly' ? (Number(r.baseline_expenses) || 0) : 0;
+      const rBaselineSales = (periodFilter === 'all' || periodFilter === 'monthly') ? (Number(r.baseline_sales) || 0) : 0;
+      const rBaselineExp = (periodFilter === 'all' || periodFilter === 'monthly') ? (Number(r.baseline_expenses) || 0) : 0;
 
       const totalSales = rBaselineSales + live.live_sales;
       const totalExpenses = rBaselineExp + live.live_expenses;
 
-      let effectiveStatus = live.active_status !== 'Available' ? live.active_status : (r.status === 'Maintenance' ? 'Maintenance' : 'Available');
-      let effectiveZone = live.latest_zone || r.zone || (INITIAL_FLEET_SALES[idx]?.zone || 'Zone A');
+      let effectiveStatus = live.active_status !== 'Available' ? live.active_status : (r.status === 'Maintenance' ? 'Maintenance' : (r.status || 'Available'));
+      let effectiveZone = live.latest_zone || r.zone || matchedDbLorry?.zone || 'Zone A';
 
       return {
         ...r,
+        target: lorryTarget,
         status: effectiveStatus,
         zone: effectiveZone,
         sales: totalSales,
         expenses: totalExpenses,
         trip_expenses: live.trip_expenses || 0,
         maint_expenses: live.maint_expenses || 0,
-        total_assigned: Math.max(live.job_count || 0, (live.assigned_count || 0) + (live.in_transit_count || 0) + (live.delivered_count || 0)),
+        total_assigned: live.job_count || 0,
         total_assigned_value: live.live_assigned_value || 0,
         completed_value: live.live_completed_value || 0,
         in_transit_count: live.in_transit_count || 0,
@@ -575,8 +634,10 @@ export default function Sales() {
       };
     });
 
-    // Auto-append any lorry from database that has assigned / in transit / delivered jobs or maintenance (No demo data added)
+    // 4. Auto-append any lorry from database that has jobs or maintenance not in list
     Object.entries(jobStatsByLorry).forEach(([plateNorm, live]) => {
+      const plateStr = String(live.plate_no || plateNorm);
+      if (plateStr.includes('lorry-001') || plateStr.toLowerCase().startsWith('lorry #')) return;
       if (!existingPlates.has(plateNorm)) {
         existingPlates.add(plateNorm);
         list.push({
@@ -591,7 +652,7 @@ export default function Sales() {
           trip_expenses: live.trip_expenses || 0,
           maint_expenses: live.maint_expenses || 0,
           baseline_expenses: 0,
-          total_assigned: Math.max(live.job_count || 0, (live.assigned_count || 0) + (live.in_transit_count || 0) + (live.delivered_count || 0)),
+          total_assigned: live.job_count || 0,
           total_assigned_value: live.live_assigned_value || 0,
           completed_value: live.live_completed_value || 0,
           in_transit_count: live.in_transit_count || 0,
@@ -608,7 +669,7 @@ export default function Sales() {
     });
 
     return list;
-  }, [fleetRecords, jobStatsByLorry, periodFilter]);
+  }, [fleetRecords, dbLorries, jobStatsByLorry, periodFilter]);
 
   // Filtered & Period-Adjusted rows
   const filteredRecords = useMemo(() => {
@@ -635,7 +696,7 @@ export default function Sales() {
     return list.map((r) => {
       let displaySales = Number(r.sales) || 0;
       let displayExpenses = Number(r.expenses) || 0;
-      let displayTarget = Number(r.target) || 0;
+      let displayTarget = Number(r.target) || 20000;
       let displayAssignedValue = Number(r.total_assigned_value) || 0;
       let displayCompletedValue = Number(r.completed_value) || 0;
       let displayPnl = displayCompletedValue - displayExpenses;
@@ -657,6 +718,10 @@ export default function Sales() {
       };
     });
   }, [mergedSalesRecords, search, zoneFilter, statusFilter, periodFilter]);
+
+  const paginatedRecords = useMemo(() => {
+    return filteredRecords.slice((page - 1) * pageSize, page * pageSize);
+  }, [filteredRecords, page, pageSize]);
 
   // Totals & KPIs (Sales period-adjusted, Target strictly monthly)
   const totals = useMemo(() => {
@@ -758,36 +823,65 @@ export default function Sales() {
     if (!deletingLorry) return;
     const plate = deletingLorry.plate_no;
     const pNorm = norm(plate);
+    const delId = String(deletingLorry.id || '');
 
     setFleetRecords((prev) => prev.filter((r) => r.id !== deletingLorry.id && norm(r.plate_no) !== pNorm));
 
-    // Clear / delete jobs assigned to this lorry so it doesn't reappear
+    // Clear / delete jobs, maintenance, and lorry assigned to this row so it never reappears
     if (sb) {
       try {
-        const matched = dbLorries.find(l => norm(l.plate_no) === pNorm || String(l.id) === String(deletingLorry.id));
-        if (matched) {
-          await sb.from('jobs').delete().eq('lorry_id', matched.id);
-          await sb.from('lorries').update({ status: 'available' }).eq('id', matched.id);
+        const matched = dbLorries.find(l => norm(l.plate_no) === pNorm || String(l.id) === delId);
+        const matchId = matched?.id;
+        if (matchId) {
+          await sb.from('jobs').delete().eq('lorry_id', matchId);
+          await sb.from('maintenance_records').delete().eq('lorry_id', matchId);
+          await sb.from('lorries').delete().eq('id', matchId);
         }
+        await sb.from('jobs').delete().eq('lorry_id', delId);
+        await sb.from('maintenance_records').delete().eq('lorry_id', delId);
       } catch (_) {}
     }
 
     try {
-      const raw = localStorage.getItem('rens_db_jobs');
-      if (raw) {
-        const parsed = JSON.parse(raw);
+      const rawJobs = localStorage.getItem('rens_db_jobs');
+      if (rawJobs) {
+        const parsed = JSON.parse(rawJobs);
         const cleaned = parsed.filter(j => {
           const jLorry = j.lorry_id || j.plate_no || j.lorry?.plate_no;
-          return norm(jLorry) !== pNorm;
+          return norm(jLorry) !== pNorm && String(j.lorry_id) !== delId;
         });
         localStorage.setItem('rens_db_jobs', JSON.stringify(cleaned));
+      }
+
+      const rawMaint = localStorage.getItem('rens_db_maintenance_records');
+      if (rawMaint) {
+        const parsed = JSON.parse(rawMaint);
+        const cleaned = parsed.filter(m => {
+          const mLorry = m.lorry_id || m.plate_no || m.lorry?.plate_no;
+          return norm(mLorry) !== pNorm && String(m.lorry_id) !== delId;
+        });
+        localStorage.setItem('rens_db_maintenance_records', JSON.stringify(cleaned));
+      }
+
+      const rawLorries = localStorage.getItem('rens_db_lorries');
+      if (rawLorries) {
+        const parsed = JSON.parse(rawLorries);
+        const cleaned = parsed.filter(l => norm(l.plate_no) !== pNorm && String(l.id) !== delId);
+        localStorage.setItem('rens_db_lorries', JSON.stringify(cleaned));
       }
     } catch (_) {}
 
     setDbJobs((prev) => prev.filter(j => {
       const jLorry = j.lorry_id || j.plate_no || j.lorry?.plate_no;
-      return norm(jLorry) !== pNorm;
+      return norm(jLorry) !== pNorm && String(j.lorry_id) !== delId;
     }));
+
+    setDbMaint((prev) => prev.filter(m => {
+      const mLorry = m.lorry_id || m.plate_no || m.lorry?.plate_no;
+      return norm(mLorry) !== pNorm && String(m.lorry_id) !== delId;
+    }));
+
+    setDbLorries((prev) => prev.filter(l => norm(l.plate_no) !== pNorm && String(l.id) !== delId));
 
     setDeletingLorry(null);
     toast(`Deleted ${plate}`, 'warn');
@@ -798,17 +892,20 @@ export default function Sales() {
     setFleetRecords([]);
     try {
       localStorage.setItem('rens_db_jobs', '[]');
+      localStorage.setItem('rens_db_maintenance_records', '[]');
       localStorage.setItem('rens_fleet_sales_records_v10', '[]');
     } catch (_) {}
     if (sb) {
       try {
         await sb.from('jobs').delete().neq('id', '___');
+        await sb.from('maintenance_records').delete().neq('id', '___');
         await sb.from('lorries').update({ status: 'available' }).neq('id', '___');
       } catch (_) {}
     }
     setDbJobs([]);
+    setDbMaint([]);
     setIsResetConfirmOpen(false);
-    toast('Cleared all sales and job records', 'ok');
+    toast('Cleared all sales, maintenance and job records', 'ok');
   };
 
   // Add new lorry row
@@ -1158,7 +1255,7 @@ export default function Sales() {
                   </td>
                 </tr>
               ) : (
-                filteredRecords.map((row, idx) => {
+                paginatedRecords.map((row, idx) => {
                   const isEditing = editingId === row.id;
                   const statusConf = STATUS_CONFIG[row.status] || STATUS_CONFIG['Available'];
 
@@ -1187,7 +1284,7 @@ export default function Sales() {
                           textAlign: 'center'
                         }}
                       >
-                        {idx + 1}
+                        {(page - 1) * pageSize + idx + 1}
                       </td>
 
                       {/* 2. LORRY NO */}
@@ -1620,6 +1717,13 @@ export default function Sales() {
             </tbody>
           </table>
         </div>
+        <Pagination
+          currentPage={page}
+          totalItems={filteredRecords.length}
+          pageSize={pageSize}
+          onPageChange={setPage}
+          itemName="lorries"
+        />
       </div>
 
       {/* Datalist for zone suggestions */}

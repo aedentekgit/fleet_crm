@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { sb, fmtMoney, fmtDate, deduplicateJobs, subscribeTable, isContractQuotation, getStorageData } from '../lib/supabase';
 import { useToast } from '../context/ToastContext';
+import Pagination from '../components/common/Pagination';
 import {
   Building2,
   FileText,
@@ -1409,6 +1410,39 @@ Email: ${settings.email || 'rensdynamic.logistics@gmail.com'}`;
     return list;
   }, [customers, contacts, jobs, availableLorries, selectedLorryId, outreachZone, outreachAudience]);
 
+  // Filtered Quotations List
+  const filteredQuotations = useMemo(() => {
+    if (!quoSearch.trim()) return quotations;
+    const q = quoSearch.toLowerCase().trim();
+    return quotations.filter(quo =>
+      (quo.customer?.company_name || quo.customer_name || '').toLowerCase().includes(q) ||
+      (quo.quote_no || quo.customer_ref || '').toLowerCase().includes(q) ||
+      (quo.pickup_location || '').toLowerCase().includes(q) ||
+      (quo.dropoff_location || '').toLowerCase().includes(q)
+    );
+  }, [quotations, quoSearch]);
+
+  // Pagination states (10 items per page)
+  const pageSize = 10;
+  const [custPage, setCustPage] = useState(1);
+  const [quotePage, setQuotePage] = useState(1);
+
+  useEffect(() => {
+    setCustPage(1);
+  }, [custSearch, custZoneFilter, custActivityFilter]);
+
+  useEffect(() => {
+    setQuotePage(1);
+  }, [quoSearch]);
+
+  const paginatedCustomers = useMemo(() => {
+    return filteredCustomers.slice((custPage - 1) * pageSize, custPage * pageSize);
+  }, [filteredCustomers, custPage, pageSize]);
+
+  const paginatedQuotations = useMemo(() => {
+    return filteredQuotations.slice((quotePage - 1) * pageSize, quotePage * pageSize);
+  }, [filteredQuotations, quotePage, pageSize]);
+
   // Active target customer in outreach modal
   const activeOutreachCustomer = useMemo(() => {
     return outreachModalCustomer || outreachTargetCustomers[0] || customers[0] || contacts[0] || null;
@@ -1439,18 +1473,6 @@ Email: ${settings.email || 'rensdynamic.logistics@gmail.com'}`;
       }
     }
   }, [isOutreachOpen, activeOutreachCustomer, activeOutreachLorry, pitchTab, isPitchCustomized, generateWhatsAppText, generateEmailContent]);
-
-  // Filtered Quotations List
-  const filteredQuotations = useMemo(() => {
-    if (!quoSearch.trim()) return quotations;
-    const q = quoSearch.toLowerCase().trim();
-    return quotations.filter(quo =>
-      (quo.customer?.company_name || quo.customer_name || '').toLowerCase().includes(q) ||
-      (quo.quote_no || quo.customer_ref || '').toLowerCase().includes(q) ||
-      (quo.pickup_location || '').toLowerCase().includes(q) ||
-      (quo.dropoff_location || '').toLowerCase().includes(q)
-    );
-  }, [quotations, quoSearch]);
 
   return (
     <div className="page">
@@ -1754,7 +1776,7 @@ Email: ${settings.email || 'rensdynamic.logistics@gmail.com'}`;
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredCustomers.map((c) => {
+                    {paginatedCustomers.map((c) => {
                       const qCount = quotations.filter(q => String(q.customer_id) === String(c.id)).length;
                       return (
                         <tr
@@ -1850,6 +1872,13 @@ Email: ${settings.email || 'rensdynamic.logistics@gmail.com'}`;
                     })}
                   </tbody>
                 </table>
+                <Pagination
+                  currentPage={custPage}
+                  totalItems={filteredCustomers.length}
+                  pageSize={pageSize}
+                  onPageChange={setCustPage}
+                  itemName="customers"
+                />
               </div>
             )}
           </div>
@@ -2456,7 +2485,7 @@ Email: ${settings.email || 'rensdynamic.logistics@gmail.com'}`;
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredQuotations.map((quo) => {
+                    {paginatedQuotations.map((quo) => {
                       let parsed = null;
                       try {
                         if (quo.special_instructions && quo.special_instructions.startsWith('{')) {
@@ -2530,6 +2559,13 @@ Email: ${settings.email || 'rensdynamic.logistics@gmail.com'}`;
                     })}
                   </tbody>
                 </table>
+                <Pagination
+                  currentPage={quotePage}
+                  totalItems={filteredQuotations.length}
+                  pageSize={pageSize}
+                  onPageChange={setQuotePage}
+                  itemName="quotations"
+                />
               </div>
             )}
           </div>

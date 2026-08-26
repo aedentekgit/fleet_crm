@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { sb, fmtMoney, esc, nextJobNo, jobNoFromQuoteNo, deduplicateJobs, checkLorryScheduleConflict, subscribeTable, isContractQuotation, getStorageData } from '../lib/supabase';
 import { useToast } from '../context/ToastContext';
+import Pagination from '../components/common/Pagination';
 import {
   Search,
   X,
@@ -237,7 +238,7 @@ export default function JobBoard({ onRequestConfirm }) {
           let spec = job.lorry_spec;
           let special = job.special_instructions;
 
-          let resolvedJobNo = job.job_no;
+          let resolvedJobNo = linkedQ?.quote_no || job.job_no;
           if (linkedQ && linkedQ.quote_no) {
             const syncd = jobNoFromQuoteNo(linkedQ.quote_no);
             if (syncd) resolvedJobNo = syncd;
@@ -260,30 +261,15 @@ export default function JobBoard({ onRequestConfirm }) {
               customer_id = linkedQ.customer_id || customer_id;
             }
 
-            if (linkedQ.quote_no === 'Q010/05/25' || job.job_no === 'Q010/05/25' || job.customer_ref?.includes('Q010/05/25')) {
-              customer = { id: 'cust-aureumaex', company_name: 'AUREUMAEX INDUSTRIES (M) SDN BHD' };
-              customer_id = 'cust-aureumaex';
-              if (pickup === 'Senawang' || !pickup) pickup = 'Aureumaex Tangkak';
-              if (dropoff === 'Nilai' || dropoff === 'Nilai (Plastictecnic)' || !dropoff) dropoff = 'PHN Tanjung Malim';
-              if (rate === 240 || !rate) rate = 650.00;
-            }
-
             if (!special && linkedQ.special_instructions) {
               special = linkedQ.special_instructions;
-            }
-          } else {
-            if (job.job_no === 'Q010/05/25' || job.customer_ref?.includes('Q010/05/25')) {
-              customer = { id: 'cust-aureumaex', company_name: 'AUREUMAEX INDUSTRIES (M) SDN BHD' };
-              customer_id = 'cust-aureumaex';
-              if (pickup === 'Senawang' || !pickup) pickup = 'Aureumaex Tangkak';
-              if (dropoff === 'Nilai' || dropoff === 'Nilai (Plastictecnic)' || !dropoff) dropoff = 'PHN Tanjung Malim';
-              if (rate === 240 || !rate) rate = 650.00;
             }
           }
 
           return {
             ...job,
             job_no: resolvedJobNo,
+            quote_no: linkedQ?.quote_no || job.quote_no || resolvedJobNo,
             is_approved: job.is_approved === 1 || job.is_approved === true || Boolean(job.approved_at) ? 1 : 0,
             customer: customer || job.customer,
             customer_id: customer_id || job.customer_id,
@@ -339,13 +325,14 @@ export default function JobBoard({ onRequestConfirm }) {
         for (const q of approvedQuotes) {
           const qIdStr = String(q.id || '');
           const qQuoteNoStr = String(q.quote_no || '');
-          const virtualJobNo = jobNoFromQuoteNo(q.quote_no) || (qQuoteNoStr ? qQuoteNoStr.replace('RJ-Q-', 'RJ-') : ('RJ-' + qIdStr.slice(-4)));
+          const virtualJobNo = q.quote_no || jobNoFromQuoteNo(q.quote_no) || (qQuoteNoStr ? qQuoteNoStr.replace('RJ-Q-', 'RJ-') : ('RJ-' + qIdStr.slice(-4)));
 
           if (qIdStr && !existingQuoteIds.has(qIdStr) && !existingJobNos.has(virtualJobNo) && !existingJobNos.has(qQuoteNoStr)) {
             const custName = q.customer?.company_name || q.customer_name || (q.pickup_location && !q.pickup_location.toLowerCase().startsWith('pt ') && !q.pickup_location.toLowerCase().startsWith('no') ? q.pickup_location.split(',')[0].trim() : null) || 'Direct Customer';
             j.unshift({
               id: q.id || ('q_job_' + Date.now()),
               job_no: virtualJobNo,
+              quote_no: q.quote_no || virtualJobNo,
               quotation_id: q.id,
               customer_id: q.customer_id || null,
               customer: q.customer || { company_name: custName },
@@ -546,6 +533,17 @@ export default function JobBoard({ onRequestConfirm }) {
     }
     return true;
   });
+
+  const [page, setPage] = useState(1);
+  const pageSize = 10;
+
+  useEffect(() => {
+    setPage(1);
+  }, [activeFilter, urgentFilter, lorryFilter, searchQuery]);
+
+  const paginatedJobs = useMemo(() => {
+    return filteredJobs.slice((page - 1) * pageSize, page * pageSize);
+  }, [filteredJobs, page, pageSize]);
 
   // Single key shortcuts binding
   useEffect(() => {
@@ -819,12 +817,6 @@ export default function JobBoard({ onRequestConfirm }) {
 
   const resolveCustomerName = (card) => {
     if (!card) return 'Direct Customer';
-    if (card.job_no === 'Q010/05/25' || card.customer_ref?.includes('Q010/05/25') || card.quotation_id === 'quo-aureumaex-01' || card.customer_id === 'cust-aureumaex') {
-      return 'AUREUMAEX INDUSTRIES (M) SDN BHD';
-    }
-    if (card.job_no === 'REV-3-6' || card.customer_ref?.includes('REV-3-6') || card.customer_ref?.includes('Rev: 3 6') || card.quotation_id === 'quo-tokopak-01' || card.customer_id === 'cust-tokopak') {
-      return 'TOKOPAK SDN. BHD.';
-    }
     return card.customer?.company_name ||
            card.customer_name ||
            (card.pickup_location && !card.pickup_location.toLowerCase().startsWith('pt ') && !card.pickup_location.toLowerCase().startsWith('no') ? card.pickup_location.split(',')[0].trim() : null) ||
@@ -973,7 +965,7 @@ export default function JobBoard({ onRequestConfirm }) {
               <table className="grid" style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
                 <thead>
                   <tr>
-                    <th style={{ width: '11%', padding: '10px 6px', textAlign: 'left', verticalAlign: 'middle', whiteSpace: 'nowrap', fontSize: '0.72rem' }}>Job # &amp; Date</th>
+                    <th style={{ width: '11%', padding: '10px 6px', textAlign: 'left', verticalAlign: 'middle', whiteSpace: 'nowrap', fontSize: '0.72rem' }}>Order / Job # &amp; Date</th>
                     <th style={{ width: '13%', padding: '10px 6px', textAlign: 'left', verticalAlign: 'middle', whiteSpace: 'nowrap', fontSize: '0.72rem' }}>Customer</th>
                     <th style={{ width: '11%', padding: '10px 6px', textAlign: 'left', verticalAlign: 'middle', whiteSpace: 'nowrap', fontSize: '0.72rem' }}>Route</th>
                     <th style={{ width: '11%', padding: '10px 6px', textAlign: 'left', verticalAlign: 'middle', whiteSpace: 'nowrap', fontSize: '0.72rem' }}>Cargo / Specs</th>
@@ -985,7 +977,7 @@ export default function JobBoard({ onRequestConfirm }) {
                 </thead>
                 <tbody>
                   {filteredJobs.length > 0 ? (
-                    filteredJobs.map(card => {
+                    paginatedJobs.map(card => {
                       const crew = (card.job_crew || []).sort((a, b) => a.role === 'driver' ? -1 : 1);
                       const lorry = lorries.find(l => l.id === card.lorry_id);
                       const pickup = card.pickup_location || card.origin || 'Port Klang';
@@ -1047,7 +1039,7 @@ export default function JobBoard({ onRequestConfirm }) {
                         >
                           <td style={{ verticalAlign: 'middle', padding: '8px 6px', textAlign: 'left', whiteSpace: 'nowrap' }}>
                             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '2px' }}>
-                              <span className="jno-pill" style={{ fontSize: '0.72rem', padding: '1px 4px' }}>{card.job_no}</span>
+                              <span className="jno-pill" style={{ fontSize: '0.72rem', padding: '1px 4px' }}>{card.quote_no || card.job_no}</span>
                               {Boolean(card.urgent) && (
                                 <span className="badge urgent" style={{ fontSize: '0.54rem', padding: '1px 3px', width: 'fit-content', display: 'inline-flex', alignItems: 'center', gap: '2px' }}>
                                   <AlertTriangle size={8} strokeWidth={2.5} />
@@ -1144,13 +1136,20 @@ export default function JobBoard({ onRequestConfirm }) {
                   )}
                 </tbody>
               </table>
+              <Pagination
+                currentPage={page}
+                totalItems={filteredJobs.length}
+                pageSize={pageSize}
+                onPageChange={setPage}
+                itemName="jobs"
+              />
             </div>
           </div>
 
           {/* Native Mobile Cards View (Zero Horizontal Scroll) */}
           <div className="mobile-cards-container">
             {filteredJobs.length > 0 ? (
-              filteredJobs.map(card => {
+              paginatedJobs.map(card => {
                 const crew = (card.job_crew || []).sort((a, b) => a.role === 'driver' ? -1 : 1);
                 const lorry = lorries.find(l => l.id === card.lorry_id);
                 const pickup = card.pickup_location || card.origin || 'Port Klang';
@@ -1212,7 +1211,7 @@ export default function JobBoard({ onRequestConfirm }) {
                     {/* Top Row: Job #, Date, Status, Urgent */}
                     <div className="mobile-card-header">
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                        <span className="jno-pill" style={{ fontSize: '0.82rem', padding: '2px 8px', fontWeight: 800 }}>{card.job_no}</span>
+                        <span className="jno-pill" style={{ fontSize: '0.82rem', padding: '2px 8px', fontWeight: 800 }}>{card.quote_no || card.job_no}</span>
                         {Boolean(card.urgent) && (
                           <span className="badge urgent" style={{ fontSize: '0.62rem', padding: '2px 6px', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
                             <AlertTriangle size={10} strokeWidth={2.5} /> Urgent
@@ -1319,6 +1318,14 @@ export default function JobBoard({ onRequestConfirm }) {
                 No jobs found matching your search.
               </div>
             )}
+            <Pagination
+              currentPage={page}
+              totalItems={filteredJobs.length}
+              pageSize={pageSize}
+              onPageChange={setPage}
+              itemName="jobs"
+              style={{ borderRadius: '12px', border: '1px solid var(--line)', marginTop: '12px' }}
+            />
           </div>
         </>
       ) : (
@@ -1578,10 +1585,11 @@ export default function JobBoard({ onRequestConfirm }) {
 }
 
 // Rich Modal Popup for Complete Job Information
-export function JobDetailModal({ job, lorries, drivers, onClose, onApprove, onAssign, onStatusChange, onCancel }) {
+export function JobDetailModal({ job, lorries = [], drivers = [], onClose, onApprove, onAssign, onStatusChange, onCancel, onEdit }) {
   const { toast } = useToast();
+  if (!job) return null;
   const crew = (job.job_crew || []).sort((a, b) => a.role === 'driver' ? -1 : 1);
-  const lorry = lorries.find(l => l.id === job.lorry_id);
+  const lorry = (lorries || []).find(l => l && (l.id === job.lorry_id || l.plate_no === job.lorry_id));
   const pickup = job.pickup_location || job.origin || 'Port Klang';
   const dropoff = job.dropoff_location || job.destination || 'Ipoh Depot';
   const customerName = job.customer?.company_name || 'Direct Customer';
@@ -1599,6 +1607,39 @@ export function JobDetailModal({ job, lorries, drivers, onClose, onApprove, onAs
   const pickupZone = normalizeZoneStr(job.pickup_zone || job.collection_zone || job.origin_zone || job.zone) || (pickup ? detectJobZone(pickup) : 'Zone A');
   const dropoffZone = normalizeZoneStr(job.dropoff_zone || job.drop_zone || job.delivery_zone || job.destination_zone) || (dropoff ? detectJobZone(dropoff) : 'Zone B');
 
+  const resolvedPickupTime = job.pickup_time || job.loading_time || '08:00 AM';
+  let resolvedDropoffTime = job.dropoff_time || job.unloading_time;
+
+  if (!resolvedDropoffTime || resolvedDropoffTime.trim() === '' || resolvedDropoffTime.toLowerCase() === 'same day' || resolvedDropoffTime.toLowerCase() === 'today') {
+    if (job.special_instructions) {
+      const matchUnloading = job.special_instructions.match(/unloading:\s*(\d{1,2}:\d{2}\s*(?:AM|PM))/i);
+      if (matchUnloading) {
+        resolvedDropoffTime = matchUnloading[1];
+      }
+    }
+    if (!resolvedDropoffTime || resolvedDropoffTime.toLowerCase() === 'same day') {
+      if (job.delivery_date && job.collection_date && job.delivery_date !== job.collection_date) {
+        resolvedDropoffTime = '10:00 AM';
+      } else {
+        const match = resolvedPickupTime.match(/(\d{1,2}):(\d{2})\s*(AM|PM)?/i);
+        if (match) {
+          let h = parseInt(match[1], 10);
+          const min = match[2];
+          const ampm = (match[3] || 'AM').toUpperCase();
+          if (ampm === 'PM' && h < 12) h += 12;
+          if (ampm === 'AM' && h === 12) h = 0;
+          let newH = (h + 4) % 24;
+          const newAmPm = newH >= 12 ? 'PM' : 'AM';
+          let dispH = newH % 12;
+          if (dispH === 0) dispH = 12;
+          resolvedDropoffTime = `${String(dispH).padStart(2, '0')}:${min} ${newAmPm}`;
+        } else {
+          resolvedDropoffTime = '05:30 PM';
+        }
+      }
+    }
+  }
+
   let parsedSpecial = null;
   try {
     if (job.special_instructions && typeof job.special_instructions === 'string' && job.special_instructions.startsWith('{')) {
@@ -1607,7 +1648,17 @@ export function JobDetailModal({ job, lorries, drivers, onClose, onApprove, onAs
   } catch (_) {}
 
   const handleCopy = () => {
-    const text = `JOB #${job.job_no}\nCustomer: ${customerName}\nRoute: ${pickup} (${pickupZone}) ➔ ${dropoff} (${dropoffZone})\nStatus: ${job.status.toUpperCase()}\nVehicle: ${lorry ? lorry.plate_no : 'Unassigned'}\nRate: ${rateText}`;
+    const text = `JOB #${job.job_no}
+Customer: ${customerName}
+Reference: ${job.customer_ref || '—'}
+Origin Pickup: ${pickup} (Zone: ${pickupZone})
+Collection Date & Time: ${job.collection_date || 'Today'} @ ${resolvedPickupTime}
+Destination Dropoff: ${dropoff} (Zone: ${dropoffZone})
+Delivery Date & Time: ${job.delivery_date || job.collection_date || 'Today'} @ ${resolvedDropoffTime}
+Status: ${job.status.toUpperCase()}
+Vehicle: ${lorry ? lorry.plate_no : 'Unassigned'}
+Lorry Spec: ${job.lorry_spec || 'Standard'}
+Rate: ${rateText}`;
     if (navigator.clipboard) {
       navigator.clipboard.writeText(text);
       toast('Job summary copied to clipboard', 'ok');
@@ -1652,7 +1703,7 @@ export function JobDetailModal({ job, lorries, drivers, onClose, onApprove, onAs
       <div
         className="modalbox tab-fade-in"
         style={{
-          maxWidth: parsedSpecial?.routes?.length ? '880px' : '720px',
+          maxWidth: parsedSpecial?.routes?.length ? '880px' : '740px',
           width: '100%',
           maxHeight: '92vh',
           display: 'flex',
@@ -1720,42 +1771,65 @@ export function JobDetailModal({ job, lorries, drivers, onClose, onApprove, onAs
               Logistics Route &amp; Schedule
             </div>
 
-            <div className="modal-route-grid">
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.76rem', fontWeight: 700, color: '#16A34A', marginBottom: '4px' }}>
-                  <span className="r-dot pickup"></span> ORIGIN PICKUP
+            <div className="modal-route-grid" style={{ marginBottom: '14px' }}>
+              {/* Origin Pickup */}
+              <div style={{ background: '#F0FDF4', border: '1.5px solid #BBF7D0', borderRadius: '10px', padding: '12px 14px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', marginBottom: '4px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.76rem', fontWeight: 800, color: '#166534' }}>
+                    <span className="r-dot pickup"></span> ORIGIN PICKUP
+                  </div>
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', background: '#DCFCE7', border: '1px solid #86EFAC', padding: '2px 8px', borderRadius: '6px', fontSize: '0.72rem', fontWeight: 800, color: '#15803D' }}>
+                    <MapPin size={11} style={{ color: '#16A34A', flexShrink: 0 }} />
+                    {pickupZone}
+                  </div>
                 </div>
-                <div style={{ fontWeight: 800, color: 'var(--navy-900)', fontSize: '0.92rem', wordBreak: 'break-word' }}>
+                <div style={{ fontWeight: 800, color: 'var(--navy-900)', fontSize: '0.94rem', wordBreak: 'break-word', marginTop: '2px' }}>
                   {pickup}
                 </div>
-                <div style={{ marginTop: '6px', display: 'inline-flex', alignItems: 'center', gap: '4px', background: '#F1F5F9', border: '1px solid #E2E8F0', padding: '2px 8px', borderRadius: '6px', fontSize: '0.74rem', fontWeight: 700, color: 'var(--navy-800)' }}>
-                  <MapPin size={11} style={{ color: 'var(--orange)', flexShrink: 0 }} />
-                  {pickupZone}
+                <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', fontSize: '0.74rem', color: '#166534' }}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', fontWeight: 700 }}>
+                    <Calendar size={12} strokeWidth={2.2} /> {job.collection_date || 'Today'}
+                  </span>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', fontWeight: 800, background: '#FFFFFF', padding: '2px 6px', borderRadius: '4px', border: '1px solid #BBF7D0' }}>
+                    <Clock size={12} strokeWidth={2.2} /> Loading: {resolvedPickupTime}
+                  </span>
                 </div>
               </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '0 8px' }}>
+              {/* Arrow */}
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '0 4px' }}>
                 <ArrowRight size={22} strokeWidth={2.5} style={{ color: 'var(--orange)' }} />
               </div>
 
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.76rem', fontWeight: 700, color: '#DC2626', marginBottom: '4px' }}>
-                  <span className="r-dot dropoff"></span> DESTINATION DROPOFF
+              {/* Destination Dropoff */}
+              <div style={{ background: '#FFF7ED', border: '1.5px solid #FED7AA', borderRadius: '10px', padding: '12px 14px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', marginBottom: '4px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.76rem', fontWeight: 800, color: '#9A3412' }}>
+                    <span className="r-dot dropoff"></span> DESTINATION DROPOFF
+                  </div>
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', background: '#FFEDD5', border: '1px solid #FDBA74', padding: '2px 8px', borderRadius: '6px', fontSize: '0.72rem', fontWeight: 800, color: '#C2410C' }}>
+                    <MapPin size={11} style={{ color: 'var(--orange)', flexShrink: 0 }} />
+                    {dropoffZone}
+                  </div>
                 </div>
-                <div style={{ fontWeight: 800, color: 'var(--navy-900)', fontSize: '0.92rem', wordBreak: 'break-word' }}>
+                <div style={{ fontWeight: 800, color: 'var(--navy-900)', fontSize: '0.94rem', wordBreak: 'break-word', marginTop: '2px' }}>
                   {dropoff}
                 </div>
-                <div style={{ marginTop: '6px', display: 'inline-flex', alignItems: 'center', gap: '4px', background: '#F1F5F9', border: '1px solid #E2E8F0', padding: '2px 8px', borderRadius: '6px', fontSize: '0.74rem', fontWeight: 700, color: 'var(--navy-800)' }}>
-                  <MapPin size={11} style={{ color: 'var(--orange)', flexShrink: 0 }} />
-                  {dropoffZone}
+                <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', fontSize: '0.74rem', color: '#9A3412' }}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', fontWeight: 700 }}>
+                    <Calendar size={12} strokeWidth={2.2} /> {job.delivery_date || job.collection_date || 'Today'}
+                  </span>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', fontWeight: 800, background: '#FFFFFF', padding: '2px 6px', borderRadius: '4px', border: '1px solid #FED7AA' }}>
+                    <Clock size={12} strokeWidth={2.2} /> Unloading: {resolvedDropoffTime}
+                  </span>
                 </div>
               </div>
             </div>
 
-            {/* Timings */}
-            <div className="modal-tri-grid">
-              <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', padding: '10px 12px', borderRadius: '10px' }}>
-                <span style={{ fontSize: '0.7rem', color: 'var(--slate)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+            {/* Structured 4-Tile Schedule Grid */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '8px' }}>
+              <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', padding: '9px 12px', borderRadius: '10px' }}>
+                <span style={{ fontSize: '0.68rem', color: 'var(--slate)', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 700 }}>
                   <Calendar size={11} strokeWidth={2.2} /> Collection Date
                 </span>
                 <b style={{ fontSize: '0.84rem', color: 'var(--navy-900)', marginTop: '2px', display: 'block' }}>
@@ -1763,21 +1837,30 @@ export function JobDetailModal({ job, lorries, drivers, onClose, onApprove, onAs
                 </b>
               </div>
 
-              <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', padding: '10px 12px', borderRadius: '10px' }}>
-                <span style={{ fontSize: '0.7rem', color: 'var(--slate)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                  <Clock size={11} strokeWidth={2.2} /> Pickup Time
+              <div style={{ background: '#F0FDF4', border: '1px solid #BBF7D0', padding: '9px 12px', borderRadius: '10px' }}>
+                <span style={{ fontSize: '0.68rem', color: '#166534', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 800 }}>
+                  <Clock size={11} strokeWidth={2.2} /> Loading / Pickup Time
                 </span>
-                <b style={{ fontSize: '0.84rem', color: 'var(--navy-900)', marginTop: '2px', display: 'block' }}>
-                  {job.pickup_time || '08:00 AM'}
+                <b style={{ fontSize: '0.88rem', color: '#15803D', marginTop: '2px', display: 'block' }}>
+                  {resolvedPickupTime}
                 </b>
               </div>
 
-              <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', padding: '10px 12px', borderRadius: '10px' }}>
-                <span style={{ fontSize: '0.7rem', color: 'var(--slate)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                  <Clock size={11} strokeWidth={2.2} /> Expected Delivery
+              <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', padding: '9px 12px', borderRadius: '10px' }}>
+                <span style={{ fontSize: '0.68rem', color: 'var(--slate)', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 700 }}>
+                  <Calendar size={11} strokeWidth={2.2} /> Delivery Date
                 </span>
                 <b style={{ fontSize: '0.84rem', color: 'var(--navy-900)', marginTop: '2px', display: 'block' }}>
-                  {job.dropoff_time || 'Same Day'}
+                  {job.delivery_date || job.collection_date || 'Same Day'}
+                </b>
+              </div>
+
+              <div style={{ background: '#FFF7ED', border: '1px solid #FED7AA', padding: '9px 12px', borderRadius: '10px' }}>
+                <span style={{ fontSize: '0.68rem', color: '#9A3412', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 800 }}>
+                  <Clock size={11} strokeWidth={2.2} /> Dropoff / Unloading Time
+                </span>
+                <b style={{ fontSize: '0.88rem', color: '#C2410C', marginTop: '2px', display: 'block' }}>
+                  {resolvedDropoffTime}
                 </b>
               </div>
             </div>
@@ -2013,103 +2096,69 @@ export function AssignModal({ job, lorries = [], drivers = [], allJobs = [], onC
   const [chosenCrew, setChosenCrew] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // 2 assigned drivers per vehicle
-  const LORRY_DRIVER_PAIRS = useMemo(() => ({
-    // 1 ton 9 ft
-    'WVG 1089': [
-      { id: 'drv-1', name: 'Ahmad Razak', role: 'driver' },
-      { id: 'drv-16', name: 'Ahmad Bin Razak', role: 'co_driver' }
-    ],
-    'BNE 3491': [
-      { id: 'drv-2', name: 'Suresh Kumar', role: 'driver' },
-      { id: 'drv-17', name: 'Ravi Chandran', role: 'co_driver' }
-    ],
-    'VAK 7819': [
-      { id: 'drv-3', name: 'Muhammad Hafiz', role: 'driver' },
-      { id: 'drv-18', name: 'Hafizuddin Rosli', role: 'co_driver' }
-    ],
-
-    // 3 & 5 ton 17 ft
-    'WQC 5217': [
-      { id: 'drv-4', name: 'Tan Boon Wah', role: 'driver' },
-      { id: 'drv-19', name: 'Tan Chee Keong', role: 'co_driver' }
-    ],
-    'BPP 8917': [
-      { id: 'drv-5', name: 'Mohd Khairul', role: 'driver' },
-      { id: 'drv-20', name: 'Mohd Sufian Ismail', role: 'co_driver' }
-    ],
-    'VCE 4317': [
-      { id: 'drv-6', name: 'Arumugam A/L Ramasamy', role: 'driver' },
-      { id: 'drv-21', name: 'Muthu Kumaran', role: 'co_driver' }
-    ],
-
-    // 10 ton 24ft
-    'WRX 1024': [
-      { id: 'drv-7', name: 'Lee Chee Keong', role: 'driver' },
-      { id: 'drv-11', name: 'Chong Wei Loon', role: 'co_driver' }
-    ],
-    'BRT 6724': [
-      { id: 'drv-8', name: 'Zulkifli bin Daud', role: 'driver' },
-      { id: 'drv-22', name: 'Zulkifli Hassan', role: 'co_driver' }
-    ],
-    'VDG 9224': [
-      { id: 'drv-9', name: 'K. Saravanan', role: 'driver' },
-      { id: 'drv-12', name: 'Devendran A/L Muthu', role: 'co_driver' }
-    ],
-
-    // 14 ton 30ft
-    'WSY 1430': [
-      { id: 'drv-10', name: 'Roslan bin Ismail', role: 'driver' },
-      { id: 'drv-13', name: 'Harun bin Osman', role: 'co_driver' }
-    ],
-    'BTU 3830': [
-      { id: 'drv-11', name: 'Chong Wei Loon', role: 'driver' },
-      { id: 'drv-14', name: 'Wong Kah Fai', role: 'co_driver' }
-    ],
-    'VEH 7530': [
-      { id: 'drv-12', name: 'Devendran A/L Muthu', role: 'driver' },
-      { id: 'drv-15', name: 'G. Tharmalingam', role: 'co_driver' }
-    ],
-
-    // 20 ton 40ft
-    'WTB 2040': [
-      { id: 'drv-13', name: 'Harun bin Osman', role: 'driver' },
-      { id: 'drv-7', name: 'Lee Chee Keong', role: 'co_driver' }
-    ],
-    'BWD 8240': [
-      { id: 'drv-14', name: 'Wong Kah Fai', role: 'driver' },
-      { id: 'drv-4', name: 'Tan Boon Wah', role: 'co_driver' }
-    ],
-    'VFK 9940': [
-      { id: 'drv-15', name: 'G. Tharmalingam', role: 'driver' },
-      { id: 'drv-5', name: 'Mohd Khairul', role: 'co_driver' }
-    ]
-  }), []);
-
-  // Compute the EXACT 2 drivers for the currently chosen lorry
+  // Real registered drivers specifically assigned to the chosen vehicle
   const selectedLorryDrivers = useMemo(() => {
     if (!chosenLorry) return [];
-    const cleanPlate = (chosenLorry.plate_no || '').replace(/\s+/g, ' ').trim().toUpperCase();
-    const pairs = LORRY_DRIVER_PAIRS[cleanPlate];
-    if (pairs && pairs.length === 2) {
-      return pairs.map(p => {
-        const found = (drivers || []).find(d => 
-          (d.id && String(d.id) === String(p.id)) ||
-          (d.name && d.name.toLowerCase().trim() === p.name.toLowerCase().trim())
-        );
-        return found ? { ...found, role: p.role } : p;
-      });
+
+    // Find fresh lorry data if available in localStorage to guarantee latest assigned roster
+    let freshLorry = chosenLorry;
+    try {
+      const rawStoredLorries = localStorage.getItem('rens_db_lorries');
+      if (rawStoredLorries) {
+        const parsed = JSON.parse(rawStoredLorries);
+        if (Array.isArray(parsed)) {
+          const found = parsed.find(item => String(item.id) === String(chosenLorry.id) || item.plate_no === chosenLorry.plate_no);
+          if (found) freshLorry = { ...chosenLorry, ...found };
+        }
+      }
+    } catch (_) {}
+
+    const rawAssigned = Array.isArray(freshLorry.assigned_driver_ids)
+      ? freshLorry.assigned_driver_ids
+      : (Array.isArray(freshLorry.driver_ids)
+        ? freshLorry.driver_ids
+        : []);
+
+    let crewDriverIds = [];
+    try {
+      const rawLC = localStorage.getItem('rens_db_lorry_crew');
+      if (rawLC) {
+        const parsedLC = JSON.parse(rawLC);
+        if (Array.isArray(parsedLC)) {
+          crewDriverIds = parsedLC
+            .filter(lc => String(lc.lorry_id) === String(freshLorry.id) || String(lc.lorry_id) === String(freshLorry.plate_no))
+            .map(lc => lc.driver_id);
+        }
+      }
+    } catch (_) {}
+
+    const assignedIds = Array.from(new Set([
+      ...(freshLorry.default_driver_id ? [String(freshLorry.default_driver_id)] : []),
+      ...rawAssigned.map(String),
+      ...crewDriverIds.map(String)
+    ])).filter(Boolean);
+
+    // If specific drivers are assigned to this lorry, show ONLY those assigned drivers!
+    if (assignedIds.length > 0) {
+      const matched = (drivers || []).filter(d => assignedIds.includes(String(d.id)));
+      if (matched.length > 0) {
+        // Sort so default_driver_id is first (Primary Driver)
+        matched.sort((a, b) => {
+          if (String(a.id) === String(freshLorry.default_driver_id)) return -1;
+          if (String(b.id) === String(freshLorry.default_driver_id)) return 1;
+          return 0;
+        });
+        return matched;
+      }
     }
 
-    // Dynamic fallback for custom lorry: 2 unique drivers
-    const hash = Math.abs((cleanPlate || chosenLorry.id || '1').split('').reduce((acc, c) => acc + c.charCodeAt(0), 0));
-    const d1 = (drivers || [])[hash % (drivers?.length || 1)] || { id: 'drv-1', name: 'Primary Driver', role: 'driver' };
-    const d2 = (drivers || [])[(hash + 1) % (drivers?.length || 1)] || { id: 'drv-2', name: 'Co-Driver', role: 'co_driver' };
-    return [
-      { ...d1, role: 'driver' },
-      { ...d2, role: 'co_driver' }
-    ];
-  }, [chosenLorry, drivers, LORRY_DRIVER_PAIRS]);
+    // Fallback: If no driver roster was ever configured for this vehicle, return default driver or all drivers
+    if (freshLorry.default_driver_id) {
+      const def = (drivers || []).find(d => String(d.id) === String(freshLorry.default_driver_id));
+      if (def) return [def];
+    }
+    return drivers || [];
+  }, [chosenLorry, drivers]);
 
   const customerName = job?.customer?.company_name || job?.customer_name || 'Direct Customer';
   const jobNo = job?.job_no || 'Job';
@@ -2226,7 +2275,7 @@ export function AssignModal({ job, lorries = [], drivers = [], allJobs = [], onC
     });
   }, [scoredLorries, filterTab, query, bestCount]);
 
-  // Handle lorry selection & assign only this lorry's dedicated primary driver
+  // Handle lorry selection & assign default driver if available
   const handleChooseLorry = useCallback((l, idx) => {
     if (!l) return;
     if (!l.isAvail && l.busyReason) {
@@ -2236,21 +2285,59 @@ export function AssignModal({ job, lorries = [], drivers = [], allJobs = [], onC
     setChosenLorry(l);
     if (typeof idx === 'number') setSelIdx(idx);
     
-    const cleanPlate = (l.plate_no || '').replace(/\s+/g, ' ').trim().toUpperCase();
-    const pairs = LORRY_DRIVER_PAIRS[cleanPlate];
+    // Resolve fresh lorry properties to get assigned drivers
+    let freshLorry = l;
+    try {
+      const rawStored = localStorage.getItem('rens_db_lorries');
+      if (rawStored) {
+        const parsed = JSON.parse(rawStored);
+        if (Array.isArray(parsed)) {
+          const found = parsed.find(item => String(item.id) === String(l.id) || item.plate_no === l.plate_no);
+          if (found) freshLorry = { ...l, ...found };
+        }
+      }
+    } catch (_) {}
+
+    const rawAssigned = Array.isArray(freshLorry.assigned_driver_ids)
+      ? freshLorry.assigned_driver_ids
+      : (Array.isArray(freshLorry.driver_ids) ? freshLorry.driver_ids : []);
+    
+    let crewDriverIds = [];
+    try {
+      const rawLC = localStorage.getItem('rens_db_lorry_crew');
+      if (rawLC) {
+        const parsedLC = JSON.parse(rawLC);
+        if (Array.isArray(parsedLC)) {
+          crewDriverIds = parsedLC
+            .filter(lc => String(lc.lorry_id) === String(freshLorry.id) || String(lc.lorry_id) === String(freshLorry.plate_no))
+            .map(lc => lc.driver_id);
+        }
+      }
+    } catch (_) {}
+
+    const assignedIds = Array.from(new Set([
+      ...(freshLorry.default_driver_id ? [String(freshLorry.default_driver_id)] : []),
+      ...rawAssigned.map(String),
+      ...crewDriverIds.map(String)
+    ])).filter(Boolean);
+
     let primary = null;
-    if (pairs && pairs.length > 0) {
-      const p = pairs[0];
-      primary = (drivers || []).find(d => 
-        (d.id && String(d.id) === String(p.id)) ||
-        (d.name && d.name.toLowerCase().trim() === p.name.toLowerCase().trim())
-      ) || p;
-    } else {
-      primary = (drivers || [])[0] || { id: 'drv-primary', name: 'Primary Driver' };
+    if (freshLorry.default_driver_id) {
+      primary = (drivers || []).find(d => String(d.id) === String(freshLorry.default_driver_id));
+    }
+    if (!primary && assignedIds.length > 0) {
+      primary = (drivers || []).find(d => assignedIds.includes(String(d.id)));
+    }
+    if (!primary && drivers && drivers.length > 0) {
+      primary = drivers[0];
     }
 
-    setChosenCrew([{ id: primary.id, name: primary.name, role: 'driver' }]);
-  }, [drivers, LORRY_DRIVER_PAIRS, toast]);
+    if (primary) {
+      setChosenCrew([{ id: primary.id, name: primary.name, role: 'driver' }]);
+    } else {
+      setChosenCrew([]);
+    }
+  }, [drivers, toast]);
 
   // Automatically select the first available lorry in the filtered list
   useEffect(() => {
@@ -2857,41 +2944,48 @@ export function AssignModal({ job, lorries = [], drivers = [], allJobs = [], onC
             <div className="crewpick" style={{ marginTop: '14px', paddingTop: '12px', borderTop: '1px solid var(--line)' }}>
               <div className="lab" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
                 <span style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--navy-900)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                  Assigned Lorry Drivers (2 Drivers)
+                  Assigned Lorry Drivers
                 </span>
                 <span style={{ fontSize: '0.74rem', fontWeight: 700, color: 'var(--orange)', textTransform: 'none' }}>
                   Lorry: <b>{chosenLorry.plate_no}</b>
                 </span>
               </div>
 
-              {/* Display ONLY the 2 drivers assigned to this specific lorry */}
+              {/* Display available drivers */}
               <div className="chiprow" style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                {selectedLorryDrivers.map((d, dIdx) => {
-                  const c = chosenCrew.find(x => String(x.id) === String(d.id));
-                  const isSelected = Boolean(c);
-                  const roleLabel = c ? (c.role === 'driver' ? 'Primary Driver' : 'Co-Driver') : (dIdx === 0 ? 'Primary Driver' : 'Relief Driver');
+                {selectedLorryDrivers.length > 0 ? (
+                  selectedLorryDrivers.map((d, dIdx) => {
+                    const c = chosenCrew.find(x => String(x.id) === String(d.id));
+                    const isSelected = Boolean(c);
+                    const isPrimary = String(d.id) === String(chosenLorry.default_driver_id) || (!chosenLorry.default_driver_id && dIdx === 0);
+                    const roleLabel = c ? (c.role === 'driver' ? 'Primary Driver' : 'Co-Driver') : (isPrimary ? 'Primary Driver' : 'Relief Driver');
 
-                  return (
-                    <span
-                      key={d.id || d.name}
-                      className={`pchip ${isSelected ? 'on' : ''}`}
-                      onClick={() => toggleCrew(d.id)}
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '6px',
-                        padding: '7px 16px',
-                        fontSize: '0.86rem',
-                        fontWeight: 700,
-                        borderRadius: '10px',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      <UserCheck size={15} strokeWidth={2.4} />
-                      {d.name} <span style={{ opacity: 0.85, fontSize: '0.75rem', fontWeight: 600 }}>• {roleLabel}</span>
-                    </span>
-                  );
-                })}
+                    return (
+                      <span
+                        key={d.id || d.name}
+                        className={`pchip ${isSelected ? 'on' : ''}`}
+                        onClick={() => toggleCrew(d.id)}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          padding: '7px 16px',
+                          fontSize: '0.86rem',
+                          fontWeight: 700,
+                          borderRadius: '10px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <UserCheck size={15} strokeWidth={2.4} />
+                        {d.name} <span style={{ opacity: 0.85, fontSize: '0.75rem', fontWeight: 600 }}>• {roleLabel}</span>
+                      </span>
+                    );
+                  })
+                ) : (
+                  <span style={{ fontSize: '0.8rem', color: 'var(--slate)' }}>
+                    No drivers specifically assigned to lorry {chosenLorry.plate_no}. Assign drivers in Fleet &amp; Assets.
+                  </span>
+                )}
               </div>
             </div>
           )}

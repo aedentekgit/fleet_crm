@@ -3,7 +3,6 @@ import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { subscribeDbStatus } from '../../lib/supabase';
 import {
-  LayoutDashboard,
   FileText,
   CheckCircle2,
   Kanban,
@@ -59,7 +58,6 @@ export default function Sidebar({ onOpenPalette, onLogoutClick }) {
         { id: 'sales', path: '/sales', label: 'Sales & Targets', icon: TrendingUp, kbd: 'S' },
         { id: 'pricing', path: '/pricing', label: 'Price Lists', icon: Tag, kbd: 'L' },
         { id: 'contacts', path: '/contacts', label: 'Contact List', icon: BookUser, kbd: 'T' },
-        { id: 'dashboard', path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, kbd: 'D' },
       ],
     },
     {
@@ -87,7 +85,6 @@ export default function Sidebar({ onOpenPalette, onLogoutClick }) {
     { id: 'board', path: '/board', label: 'Board', icon: Kanban },
     { id: 'approvals', path: '/approvals', label: 'Approvals', icon: CheckCircle2 },
     { id: 'quotations', path: '/quotations', label: 'Orders', icon: FileText },
-    { id: 'dashboard', path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   ];
 
   const [dbStatus, setDbStatus] = useState({ connected: false, checked: false });
@@ -194,12 +191,12 @@ export default function Sidebar({ onOpenPalette, onLogoutClick }) {
         {/* Sidebar Footer User Card & DB Status */}
         <div className="sidebar-footer">
           <div className="user-card">
-            <div className="user-avatar" title={staff?.name || 'Demo Staff'}>
-              {(staff?.name || 'D').charAt(0).toUpperCase()}
+            <div className="user-avatar" title={staff?.name || 'Admin Staff'}>
+              {(staff?.name || 'A').charAt(0).toUpperCase()}
             </div>
             {!isMini && (
               <div className="user-info">
-                <span className="user-name">{staff?.name || 'Demo Staff'}</span>
+                <span className="user-name">{staff?.name || 'Admin Staff'}</span>
                 <span className={`user-role ${staff?.role === 'owner' ? 'owner' : ''}`}>
                   {staff?.role || 'owner'}
                 </span>

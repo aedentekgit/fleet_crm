@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { sb, fmtDate, deduplicateJobs, subscribeTable, clearCustomerContactsData, getStorageData } from '../lib/supabase';
 import { useToast } from '../context/ToastContext';
+import Pagination from '../components/common/Pagination';
 import {
   Building2,
   Search,
@@ -689,6 +690,17 @@ export default function ContactList() {
     return list;
   }, [contacts, activeTab, regionFilter, searchQuery]);
 
+  const [page, setPage] = useState(1);
+  const pageSize = 10;
+
+  useEffect(() => {
+    setPage(1);
+  }, [activeTab, regionFilter, searchQuery]);
+
+  const paginatedContacts = useMemo(() => {
+    return filteredContacts.slice((page - 1) * pageSize, page * pageSize);
+  }, [filteredContacts, page, pageSize]);
+
   // Target customers for Active Outreach Modal strictly matched with Lorry Last Zone
   const outreachTargetCustomers = useMemo(() => {
     // Determine chosen lorry if selected
@@ -1211,7 +1223,7 @@ export default function ContactList() {
                 </tr>
               </thead>
               <tbody>
-                {filteredContacts.map((c) => (
+                {paginatedContacts.map((c) => (
                   <tr
                     key={c.id}
                     style={{ borderBottom: '1px solid var(--line)', transition: 'background 0.15s ease' }}
@@ -1280,6 +1292,13 @@ export default function ContactList() {
                 ))}
               </tbody>
             </table>
+            <Pagination
+              currentPage={page}
+              totalItems={filteredContacts.length}
+              pageSize={pageSize}
+              onPageChange={setPage}
+              itemName="contacts"
+            />
           </div>
         )}
       </div>

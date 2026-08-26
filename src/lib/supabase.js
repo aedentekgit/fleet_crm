@@ -55,73 +55,89 @@ const ALL_TABLES = [
 export const DEMO_SEED_DATA = {
   customers: [],
   quotations: [],
-  drivers: [
-    // 1 ton 9 ft drivers
-    { id: 'drv-1', name: 'Ahmad Razak', phone: '012-345 8901', pin: '1001', ic_number: '880512-10-5521', license_class: 'GDL - D', license_expiry: '2027-02-15', is_helper: false, status: 'available' },
-    { id: 'drv-2', name: 'Suresh Kumar', phone: '016-223 4589', pin: '1002', ic_number: '901103-14-5823', license_class: 'GDL - D', license_expiry: '2026-11-20', is_helper: false, status: 'available' },
-    { id: 'drv-3', name: 'Muhammad Hafiz', phone: '017-889 1234', pin: '1003', ic_number: '920315-08-6147', license_class: 'GDL - D', license_expiry: '2026-12-10', is_helper: false, status: 'available' },
-    
-    // 3 & 5 ton 17 ft drivers
-    { id: 'drv-4', name: 'Tan Boon Wah', phone: '012-678 9012', pin: '1004', ic_number: '850720-10-5349', license_class: 'GDL - E', license_expiry: '2027-01-18', is_helper: false, status: 'available' },
-    { id: 'drv-5', name: 'Mohd Khairul', phone: '013-456 7890', pin: '1005', ic_number: '870914-01-5231', license_class: 'GDL - E', license_expiry: '2026-10-30', is_helper: false, status: 'available' },
-    { id: 'drv-6', name: 'Arumugam A/L Ramasamy', phone: '019-334 5678', pin: '1006', ic_number: '830405-10-5677', license_class: 'GDL - E', license_expiry: '2027-03-05', is_helper: false, status: 'available' },
-    
-    // 10 ton 24ft drivers
-    { id: 'drv-7', name: 'Lee Chee Keong', phone: '016-789 0123', pin: '1007', ic_number: '820819-14-5119', license_class: 'GDL - E (Bersendi)', license_expiry: '2026-12-28', is_helper: false, status: 'available' },
-    { id: 'drv-8', name: 'Zulkifli bin Daud', phone: '011-2345 6789', pin: '1008', ic_number: '860211-03-5491', license_class: 'GDL - E (Bersendi)', license_expiry: '2027-02-20', is_helper: false, status: 'available' },
-    { id: 'drv-9', name: 'K. Saravanan', phone: '018-901 2345', pin: '1009', ic_number: '891025-08-5773', license_class: 'GDL - E (Bersendi)', license_expiry: '2027-04-15', is_helper: false, status: 'available' },
-    
-    // 14 ton 30ft drivers
-    { id: 'drv-10', name: 'Roslan bin Ismail', phone: '012-901 2345', pin: '1010', ic_number: '810617-10-5023', license_class: 'GDL - E (Bersendi / Berat)', license_expiry: '2027-03-12', is_helper: false, status: 'available' },
-    { id: 'drv-11', name: 'Chong Wei Loon', phone: '017-345 6789', pin: '1011', ic_number: '841208-14-5367', license_class: 'GDL - E (Bersendi / Berat)', license_expiry: '2026-11-05', is_helper: false, status: 'available' },
-    { id: 'drv-12', name: 'Devendran A/L Muthu', phone: '016-456 7891', pin: '1012', ic_number: '880330-02-5819', license_class: 'GDL - E (Bersendi / Berat)', license_expiry: '2027-01-25', is_helper: false, status: 'available' },
-    
-    // 20 ton 40ft drivers
-    { id: 'drv-13', name: 'Harun bin Osman', phone: '013-890 1234', pin: '1013', ic_number: '790915-06-5381', license_class: 'GDL - E (Articulated)', license_expiry: '2027-05-10', is_helper: false, status: 'available' },
-    { id: 'drv-14', name: 'Wong Kah Fai', phone: '012-234 5679', pin: '1014', ic_number: '831122-10-5905', license_class: 'GDL - E (Articulated)', license_expiry: '2026-12-15', is_helper: false, status: 'available' },
-    { id: 'drv-15', name: 'G. Tharmalingam', phone: '018-765 4321', pin: '1015', ic_number: '800114-08-5267', license_class: 'GDL - E (Articulated)', license_expiry: '2027-02-28', is_helper: false, status: 'available' }
-  ],
-  lorries: [
-    // 1 ton 9 ft (3 lorries)
-    { id: 'lry-1', plate_no: 'WVG 1089', capacity_desc: '1 ton 9 ft', target: 15000, monthly_target: 15000, status: 'available', road_tax_expiry: '2027-02-15', insurance_expiry: '2027-02-15', permit_expiry: '2027-08-20', default_driver_id: 'drv-1' },
-    { id: 'lry-2', plate_no: 'BNE 3491', capacity_desc: '1 ton 9 ft', target: 15000, monthly_target: 15000, status: 'available', road_tax_expiry: '2026-11-20', insurance_expiry: '2026-11-20', permit_expiry: '2027-05-15', default_driver_id: 'drv-2' },
-    { id: 'lry-3', plate_no: 'VAK 7819', capacity_desc: '1 ton 9 ft', target: 15000, monthly_target: 15000, status: 'available', road_tax_expiry: '2026-12-10', insurance_expiry: '2026-12-10', permit_expiry: '2027-06-30', default_driver_id: 'drv-3' },
-
-    // 3 & 5 ton 17 ft (3 lorries)
-    { id: 'lry-4', plate_no: 'WQC 5217', capacity_desc: '3 & 5 ton 17 ft', target: 20000, monthly_target: 20000, status: 'available', road_tax_expiry: '2027-01-18', insurance_expiry: '2027-01-18', permit_expiry: '2027-07-22', default_driver_id: 'drv-4' },
-    { id: 'lry-5', plate_no: 'BPP 8917', capacity_desc: '3 & 5 ton 17 ft', target: 20000, monthly_target: 20000, status: 'available', road_tax_expiry: '2026-10-30', insurance_expiry: '2026-10-30', permit_expiry: '2027-04-12', default_driver_id: 'drv-5' },
-    { id: 'lry-6', plate_no: 'VCE 4317', capacity_desc: '3 & 5 ton 17 ft', target: 20000, monthly_target: 20000, status: 'available', road_tax_expiry: '2027-03-05', insurance_expiry: '2027-03-05', permit_expiry: '2027-09-15', default_driver_id: 'drv-6' },
-
-    // 10 ton 24ft (3 lorries)
-    { id: 'lry-7', plate_no: 'WRX 1024', capacity_desc: '10 ton 24ft', target: 25000, monthly_target: 25000, status: 'available', road_tax_expiry: '2026-12-28', insurance_expiry: '2026-12-28', permit_expiry: '2027-06-18', default_driver_id: 'drv-7' },
-    { id: 'lry-8', plate_no: 'BRT 6724', capacity_desc: '10 ton 24ft', target: 25000, monthly_target: 25000, status: 'available', road_tax_expiry: '2027-02-20', insurance_expiry: '2027-02-20', permit_expiry: '2027-08-10', default_driver_id: 'drv-8' },
-    { id: 'lry-9', plate_no: 'VDG 9224', capacity_desc: '10 ton 24ft', target: 25000, monthly_target: 25000, status: 'available', road_tax_expiry: '2027-04-15', insurance_expiry: '2027-04-15', permit_expiry: '2027-10-05', default_driver_id: 'drv-9' },
-
-    // 14 ton 30ft (3 lorries)
-    { id: 'lry-10', plate_no: 'WSY 1430', capacity_desc: '14 ton 30ft', target: 30000, monthly_target: 30000, status: 'available', road_tax_expiry: '2027-03-12', insurance_expiry: '2027-03-12', permit_expiry: '2027-09-28', default_driver_id: 'drv-10' },
-    { id: 'lry-11', plate_no: 'BTU 3830', capacity_desc: '14 ton 30ft', target: 30000, monthly_target: 30000, status: 'available', road_tax_expiry: '2026-11-05', insurance_expiry: '2026-11-05', permit_expiry: '2027-05-20', default_driver_id: 'drv-11' },
-    { id: 'lry-12', plate_no: 'VEH 7530', capacity_desc: '14 ton 30ft', target: 30000, monthly_target: 30000, status: 'available', road_tax_expiry: '2027-01-25', insurance_expiry: '2027-01-25', permit_expiry: '2027-07-14', default_driver_id: 'drv-12' },
-
-    // 20 ton 40ft (3 lorries)
-    { id: 'lry-13', plate_no: 'WTB 2040', capacity_desc: '20 ton 40ft', target: 35000, monthly_target: 35000, status: 'available', road_tax_expiry: '2027-05-10', insurance_expiry: '2027-05-10', permit_expiry: '2027-11-20', default_driver_id: 'drv-13' },
-    { id: 'lry-14', plate_no: 'BWD 8240', capacity_desc: '20 ton 40ft', target: 35000, monthly_target: 35000, status: 'available', road_tax_expiry: '2026-12-15', insurance_expiry: '2026-12-15', permit_expiry: '2027-06-25', default_driver_id: 'drv-14' },
-    { id: 'lry-15', plate_no: 'VFK 9940', capacity_desc: '20 ton 40ft', target: 35000, monthly_target: 35000, status: 'available', road_tax_expiry: '2027-02-28', insurance_expiry: '2027-02-28', permit_expiry: '2027-08-30', default_driver_id: 'drv-15' }
-  ],
-  jobs: [],
-  job_crew: [],
-  approvals: [],
-  inventory_items: [],
-  maintenance_records: [],
+  drivers: [],
+  lorries: [],
   lorry_crew: [],
   customer_contacts: [],
+  customer_rates: [],
   customer_price_lists: [],
   jobs: [],
   job_crew: [],
+  maintenance_records: [],
+  inventory_items: [],
+  inventory_receipts: [],
+  inventory_issuances: [],
   approvals: [],
   sales_invoices: [],
-  inventory_issuances: [],
-  inventory_receipts: []
+  staff: [
+    {
+      id: 'staff-owner-1',
+      name: 'Rens Admin',
+      username: 'Dynamic',
+      role: 'owner',
+      pin: '12345',
+      active: 1
+    },
+    {
+      id: 'staff-admin-1',
+      name: 'Logistics Operations',
+      username: 'Admin',
+      role: 'admin',
+      pin: '12345',
+      active: 1
+    }
+  ]
 };
+
+// Automatic cleanup of legacy demo & mock data from localStorage
+try {
+  if (typeof window !== 'undefined' && localStorage.getItem('rens_clean_production_mode_v3') !== 'true') {
+    const demoTables = [
+      'customers', 'quotations', 'drivers', 'lorries', 'lorry_crew',
+      'jobs', 'job_crew', 'customer_contacts', 'customer_rates',
+      'customer_price_lists', 'sales_invoices', 'inventory_items',
+      'inventory_issuances', 'inventory_receipts', 'maintenance_records', 'approvals'
+    ];
+    demoTables.forEach(table => {
+      const stored = localStorage.getItem('rens_db_' + table);
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed)) {
+            const hasDemo = parsed.some(item => {
+              const id = String(item.id || '');
+              const plate = String(item.plate_no || '');
+              const lorryId = String(item.lorry_id || '');
+              return id.startsWith('cust-') || id.startsWith('qt-') || id.startsWith('quo-') ||
+                     id.startsWith('drv-') || id.startsWith('lry-') || id.startsWith('lorry-') ||
+                     id.startsWith('lc-') || id.startsWith('job-') || id.startsWith('cpl-') ||
+                     id.startsWith('inv-') || id.startsWith('cc-') || id.startsWith('contact-') ||
+                     id.startsWith('maint-') || id.startsWith('item-') || id.startsWith('rec-') ||
+                     id.startsWith('iss-') || id.startsWith('app-') || plate.includes('lorry-001') ||
+                     lorryId.includes('lorry-001');
+            });
+            if (hasDemo) {
+              localStorage.setItem('rens_db_' + table, '[]');
+            }
+          }
+        } catch (_) {}
+      }
+    });
+    localStorage.removeItem('rens_fleet_sales_records_v10');
+    localStorage.removeItem('rens_fleet_sales_records');
+    localStorage.removeItem('rens_expenses_records');
+    localStorage.removeItem('rens_demo_seed_v15');
+    localStorage.removeItem('rens_demo_seed_v14');
+    localStorage.removeItem('rens_demo_seed_v10');
+    localStorage.setItem('rens_clean_production_mode_v3', 'true');
+
+    // Trigger server cleanup to wipe demo records from MySQL
+    try {
+      fetch('/api/db.php?action=clear_all_data').catch(() => {});
+      fetch('http://localhost:8080/api/db.php?action=clear_all_data').catch(() => {});
+    } catch (_) {}
+  }
+} catch (_) {}
 
 export async function clearCustomerContactsData() {
   try {
@@ -144,7 +160,6 @@ export async function clearFleetData() {
       notifyTableChange(table);
     });
 
-    // Also trigger backend table clear for fleet tables specifically
     try {
       for (const table of fleetTables) {
         await sb.from(table).delete();
@@ -159,19 +174,13 @@ export async function clearFleetData() {
 
 export async function seedFleetDemoData() {
   try {
-    localStorage.setItem('rens_db_drivers', JSON.stringify(DEMO_SEED_DATA.drivers));
-    localStorage.setItem('rens_db_lorries', JSON.stringify(DEMO_SEED_DATA.lorries));
-    notifyTableChange('drivers');
-    notifyTableChange('lorries');
-
-    // Also trigger backend insert for live database
-    try {
-      if (sb) {
-        await sb.from('drivers').insert(DEMO_SEED_DATA.drivers);
-        await sb.from('lorries').insert(DEMO_SEED_DATA.lorries);
+    const fleetTables = ['lorries', 'drivers', 'lorry_crew', 'maintenance_records', 'inventory_items', 'inventory_receipts', 'inventory_issuances'];
+    fleetTables.forEach(table => {
+      if (DEMO_SEED_DATA[table]) {
+        saveLocalTableData(table, DEMO_SEED_DATA[table]);
+        notifyTableChange(table);
       }
-    } catch (_) {}
-
+    });
     return { success: true };
   } catch (e) {
     return { success: false, error: e.message };
@@ -180,17 +189,18 @@ export async function seedFleetDemoData() {
 
 export async function seedAllDemoData() {
   try {
+    // 1. Populate local storage with all 10 demo records per module
     Object.entries(DEMO_SEED_DATA).forEach(([table, data]) => {
-      localStorage.setItem('rens_db_' + table, JSON.stringify(data));
+      saveLocalTableData(table, data);
       notifyTableChange(table);
     });
 
-    // Also trigger backend seed to populate live database
+    // 2. Trigger backend MySQL database seed endpoint if available
     try {
-      const endpoints = ['/api/db.php?action=seed_demo', '/api/db.js?action=seed_demo', 'api/db.php?action=seed_demo'];
+      const endpoints = ['/api/db.js?action=seed_demo', '/api/db.php?action=seed_demo', 'api/db.js?action=seed_demo'];
       for (const ep of endpoints) {
         try {
-          const res = await fetch(ep, { method: 'POST' });
+          const res = await fetch(ep);
           if (res.ok) break;
         } catch (_) {}
       }
@@ -198,55 +208,22 @@ export async function seedAllDemoData() {
 
     return { success: true };
   } catch (e) {
+    console.error('Error seeding demo data:', e);
     return { success: false, error: e.message };
   }
 }
 
-// Purge legacy demo data on client load (strictly preserving fleet lorries & drivers)
-try {
-  if (typeof window !== 'undefined' && window.localStorage) {
-    // 1. Clean demo price lists
-    const rawPrice = localStorage.getItem('rens_db_customer_price_lists');
-    if (rawPrice) {
-      try {
-        const parsed = JSON.parse(rawPrice);
-        const filtered = parsed.filter(item => {
-          const id = String(item.id || '');
-          const tag = (item.client_tag || '').toLowerCase().trim();
-          const dest = (item.destination || '').toLowerCase().trim();
-          return !(id.startsWith('cpl-') || tag === 'plastictecnic' || tag === 'sony' || tag === 'panasonic' || tag === 'sema / panasonic' || tag === 'daikin' || tag === 'apm' || dest.includes('senawang to'));
-        });
-        if (filtered.length !== parsed.length) {
-          localStorage.setItem('rens_db_customer_price_lists', JSON.stringify(filtered));
-        }
-      } catch (_) {}
-    }
-    localStorage.removeItem('rens_diesel_price_matrix_v3');
-    localStorage.removeItem('rens_diesel_price_matrix_v2');
-
-    // 2. Clean demo contacts
-    const rawContacts = localStorage.getItem('rens_db_customer_contacts');
-    if (rawContacts) {
-      try {
-        const parsed = JSON.parse(rawContacts);
-        const filtered = parsed.filter(c => !String(c.id).match(/^cc-[1-9]$|^cc-1[0-9]$|^cc-2[0-3]$/));
-        if (filtered.length !== parsed.length) {
-          localStorage.setItem('rens_db_customer_contacts', JSON.stringify(filtered));
-        }
-      } catch (_) {}
-    }
-  }
-} catch (_) {}
-
 export async function clearDatabaseData() {
   try {
-    // 1. Clear local storage cache for non-fleet tables (preserve lorries and drivers)
-    const preserveKeys = new Set(['rens_db_lorries', 'rens_db_drivers']);
+    // 1. Clear local storage cache for all tables
     Object.keys(localStorage).forEach(key => {
-      if (key.startsWith('rens_db_') && !preserveKeys.has(key)) {
+      if (key.startsWith('rens_db_')) {
         localStorage.setItem(key, '[]');
       }
     });
+    localStorage.removeItem('rens_driver');
+    localStorage.removeItem('rens_driver_phone');
+    localStorage.removeItem('rens_fleet_sales_records_v10');
 
     // 2. Call backend DB clear endpoint
     try {
@@ -259,8 +236,8 @@ export async function clearDatabaseData() {
       }
     } catch (_) {}
 
-    // 3. Notify table listeners for non-fleet tables
-    ALL_TABLES.filter(t => t !== 'lorries' && t !== 'drivers').forEach(table => notifyTableChange(table));
+    // 3. Notify all table listeners
+    ALL_TABLES.forEach(table => notifyTableChange(table));
     return { success: true };
   } catch (e) {
     console.error('Error clearing data:', e);
@@ -269,16 +246,7 @@ export async function clearDatabaseData() {
 }
 
 export function clearAllDemoData() {
-  // Clear local storage keys except fleet
-  try {
-    const preserveKeys = new Set(['rens_db_lorries', 'rens_db_drivers']);
-    Object.keys(localStorage).forEach(key => {
-      if (key.startsWith('rens_db_') && !preserveKeys.has(key)) {
-        localStorage.setItem(key, '[]');
-      }
-    });
-    ALL_TABLES.filter(t => t !== 'lorries' && t !== 'drivers').forEach(table => notifyTableChange(table));
-  } catch (e) {}
+  clearDatabaseData();
 }
 
 export const clearAllData = clearDatabaseData;
@@ -291,197 +259,35 @@ const tableFetchTimestamps = new Map();
 const CACHE_TTL_MS = 15000; // 15 seconds fresh cache TTL
 
 function mergeWithDemo(tableName, data) {
-  if (!Array.isArray(data)) return data;
-  if (['customers', 'quotations', 'jobs', 'approvals', 'sales_invoices', 'lorries'].includes(tableName)) {
-    return data;
-  }
-  const demoItems = DEMO_SEED_DATA[tableName] || [];
-  if (!demoItems.length) return data;
-
-  if (tableName === 'lorries') {
-    const existingPlates = new Set(data.map(x => (x.plate_no || '').replace(/\s+/g, '').toUpperCase()));
-    const merged = [...data];
-    demoItems.forEach(demoLorry => {
-      const normP = (demoLorry.plate_no || '').replace(/\s+/g, '').toUpperCase();
-      if (!existingPlates.has(normP)) {
-        merged.push(demoLorry);
-        existingPlates.add(normP);
-      }
-    });
-    return merged;
-  }
-
-  if (tableName === 'drivers') {
-    const existingNames = new Set(data.map(x => (x.name || '').trim().toLowerCase()));
-    const merged = [...data];
-    demoItems.forEach(demoDrv => {
-      const normN = (demoDrv.name || '').trim().toLowerCase();
-      if (!existingNames.has(normN)) {
-        merged.push(demoDrv);
-        existingNames.add(normN);
-      }
-    });
-    return merged;
-  }
-
-  if (tableName === 'customers') {
-    const existingNames = new Set(data.map(x => (x.company_name || x.id || '').trim().toLowerCase()));
-    const merged = [...data];
-    demoItems.forEach(demoCust => {
-      const normN = (demoCust.company_name || demoCust.id || '').trim().toLowerCase();
-      if (!existingNames.has(normN)) {
-        merged.push(demoCust);
-        existingNames.add(normN);
-      }
-    });
-    return merged;
-  }
-
-  if (tableName === 'quotations') {
-    const existingQuotes = new Set(data.map(x => (x.quote_no || x.id || '').trim().toLowerCase()));
-    const merged = [...data];
-    demoItems.forEach(demoQuo => {
-      const normQ = (demoQuo.quote_no || demoQuo.id || '').trim().toLowerCase();
-      if (!existingQuotes.has(normQ)) {
-        merged.push(demoQuo);
-        existingQuotes.add(normQ);
-      }
-    });
-    return merged;
-  }
-
-  if (tableName === 'customer_contacts') {
-    const existingNames = new Set(data.map(x => (x.customer_name || '').trim().toLowerCase()));
-    const merged = [...data];
-    demoItems.forEach(demoCc => {
-      const normN = (demoCc.customer_name || '').trim().toLowerCase();
-      if (!existingNames.has(normN)) {
-        merged.push(demoCc);
-        existingNames.add(normN);
-      }
-    });
-    merged.sort((a, b) => (Number(a.no) || 999) - (Number(b.no) || 999));
-    return merged;
-  }
-
-  if (tableName === 'inventory_items') {
-    const existingSkus = new Set(data.map(x => (x.sku || x.id || x.item_name || '').trim().toLowerCase()));
-    const merged = [...data];
-    demoItems.forEach(demoInv => {
-      const normK = (demoInv.sku || demoInv.id || demoInv.item_name || '').trim().toLowerCase();
-      if (!existingSkus.has(normK)) {
-        merged.push(demoInv);
-        existingSkus.add(normK);
-      }
-    });
-    return merged;
-  }
-
-  if (tableName === 'maintenance_records') {
-    const existingIds = new Set(data.map(x => (x.id || '').trim().toLowerCase()));
-    const merged = [...data];
-    demoItems.forEach(demoM => {
-      const normM = (demoM.id || '').trim().toLowerCase();
-      if (!existingIds.has(normM)) {
-        merged.push(demoM);
-        existingIds.add(normM);
-      }
-    });
-    return merged;
-  }
-
-  if (tableName === 'customer_price_lists') {
-    const existingDest = new Set(data.map(x => (x.destination || x.id || '').trim().toLowerCase()));
-    const merged = [...data];
-    demoItems.forEach(demoCpl => {
-      const normD = (demoCpl.destination || demoCpl.id || '').trim().toLowerCase();
-      if (!existingDest.has(normD)) {
-        merged.push(demoCpl);
-        existingDest.add(normD);
-      }
-    });
-    merged.sort((a, b) => (Number(a.item_no || a.id) || 999) - (Number(b.item_no || b.id) || 999));
-    return merged;
-  }
-
-  if (tableName === 'jobs') {
-    const existingIds = new Set(data.map(x => (x.id || x.job_no || '').trim().toLowerCase()));
-    const merged = [...data];
-    demoItems.forEach(demoJob => {
-      const normJ = (demoJob.id || demoJob.job_no || '').trim().toLowerCase();
-      if (!existingIds.has(normJ)) {
-        merged.push(demoJob);
-        existingIds.add(normJ);
-      }
-    });
-    return merged;
-  }
-
-  if (tableName === 'approvals') {
-    const existingIds = new Set(data.map(x => (x.id || x.ref_id || '').trim().toLowerCase()));
-    const merged = [...data];
-    demoItems.forEach(demoAppr => {
-      const normA = (demoAppr.id || demoAppr.ref_id || '').trim().toLowerCase();
-      if (!existingIds.has(normA)) {
-        merged.push(demoAppr);
-        existingIds.add(normA);
-      }
-    });
-    return merged;
-  }
-
-  if (tableName === 'sales_invoices') {
-    const existingIds = new Set(data.map(x => (x.id || x.invoice_no || '').trim().toLowerCase()));
-    const merged = [...data];
-    demoItems.forEach(demoInv => {
-      const normI = (demoInv.id || demoInv.invoice_no || '').trim().toLowerCase();
-      if (!existingIds.has(normI)) {
-        merged.push(demoInv);
-        existingIds.add(normI);
-      }
-    });
-    return merged;
-  }
-
-  return data;
+  return Array.isArray(data) ? data : [];
 }
+
 
 export function getLocalTableData(tableName) {
   if (memoryTableCache.has(tableName)) {
-    return memoryTableCache.get(tableName);
+    const mem = memoryTableCache.get(tableName);
+    if (tableName === 'staff' && (!mem || mem.length === 0)) {
+      return DEMO_SEED_DATA.staff;
+    }
+    return mem;
   }
   try {
     const stored = localStorage.getItem('rens_db_' + tableName);
     if (stored !== null) {
       const parsed = JSON.parse(stored);
       if (Array.isArray(parsed)) {
-        const merged = mergeWithDemo(tableName, parsed);
-        if (tableName === 'jobs') {
-          const patched = merged.map(j => {
-            if (j.job_no === 'Q010/05/25' || j.customer_ref?.includes('Q010/05/25') || j.quotation_id === 'quo-aureumaex-01') {
-              return {
-                ...j,
-                customer_id: 'cust-aureumaex',
-                customer: { id: 'cust-aureumaex', company_name: 'AUREUMAEX INDUSTRIES (M) SDN BHD' },
-                pickup_location: (j.pickup_location === 'Senawang' || !j.pickup_location) ? 'Aureumaex Tangkak' : j.pickup_location,
-                dropoff_location: (j.dropoff_location === 'Nilai' || j.dropoff_location === 'Nilai (Plastictecnic)' || !j.dropoff_location) ? 'PHN Tanjung Malim' : j.dropoff_location,
-                rate_amount: (j.rate_amount === 240 || !j.rate_amount) ? 650.00 : j.rate_amount,
-                customer_ref: j.customer_ref?.includes('Q010/05/25') ? j.customer_ref : 'Q010/05/25'
-              };
-            }
-            return j;
-          });
-          memoryTableCache.set(tableName, patched);
-          return patched;
+        if (tableName === 'staff' && parsed.length === 0) {
+          memoryTableCache.set(tableName, DEMO_SEED_DATA.staff);
+          return DEMO_SEED_DATA.staff;
         }
-        memoryTableCache.set(tableName, merged);
-        return merged;
+        memoryTableCache.set(tableName, parsed);
+        return parsed;
       }
     }
   } catch (e) {}
-  const demo = DEMO_SEED_DATA[tableName] || [];
-  memoryTableCache.set(tableName, demo);
-  return demo;
+  const fallback = DEMO_SEED_DATA[tableName] || [];
+  memoryTableCache.set(tableName, fallback);
+  return fallback;
 }
 
 export function saveLocalTableData(tableName, data) {
@@ -576,11 +382,8 @@ function createDbProxyClient() {
         updateDbStatus({ connected: true, error: null });
         const serverData = json.data || [];
         const merged = mergeWithDemo(tableName, serverData);
-        if (merged && merged.length > 0) {
-          saveLocalTableData(tableName, merged);
-          return merged;
-        }
-        return getLocalTableData(tableName);
+        saveLocalTableData(tableName, merged);
+        return merged;
       } catch (e) {
         return getLocalTableData(tableName);
       } finally {
@@ -616,13 +419,8 @@ function createDbProxyClient() {
         const custMap = {};
         (customers || []).forEach(c => custMap[c.id] = c);
         data.forEach(row => {
-          if (row.job_no === 'Q010/05/25' || row.customer_ref?.includes('Q010/05/25') || row.quotation_id === 'quo-aureumaex-01') {
-            row.customer_id = 'cust-aureumaex';
-            row.customer = custMap['cust-aureumaex'] || { id: 'cust-aureumaex', company_name: 'AUREUMAEX INDUSTRIES (M) SDN BHD' };
-          } else if (row.customer_id && custMap[row.customer_id]) {
+          if (row.customer_id && custMap[row.customer_id]) {
             row.customer = custMap[row.customer_id];
-          } else if (row.customer_id && !row.customer) {
-            row.customer = { company_name: 'Customer #' + row.customer_id };
           }
         });
       }
@@ -631,8 +429,8 @@ function createDbProxyClient() {
         const lorryMap = {};
         (lorries || []).forEach(l => lorryMap[l.id] = l);
         data.forEach(row => {
-          if (row.lorry_id && !row.lorry) {
-            row.lorry = lorryMap[row.lorry_id] || { plate_no: 'Lorry #' + row.lorry_id };
+          if (row.lorry_id && lorryMap[row.lorry_id]) {
+            row.lorry = lorryMap[row.lorry_id];
           }
         });
       }
@@ -641,10 +439,10 @@ function createDbProxyClient() {
         const drvMap = {};
         (drivers || []).forEach(d => drvMap[d.id] = d);
         data.forEach(row => {
-          if (row.driver_id && !row.driver) {
-            row.driver = drvMap[row.driver_id] || { name: 'Driver #' + row.driver_id };
-          } else if (row.default_driver_id && !row.driver) {
-            row.driver = drvMap[row.default_driver_id] || { name: 'Driver #' + row.default_driver_id };
+          if (row.driver_id && drvMap[row.driver_id]) {
+            row.driver = drvMap[row.driver_id];
+          } else if (row.default_driver_id && drvMap[row.default_driver_id]) {
+            row.driver = drvMap[row.default_driver_id];
           }
         });
 
@@ -773,21 +571,13 @@ function createDbProxyClient() {
       if (json.error) throw new Error(json.error);
 
       updateDbStatus({ connected: true, error: null });
-      const rawData = json.data || [];
-      data = mergeWithDemo(this.table, rawData);
-      if (!data || data.length === 0) {
-        data = getLocalTableData(this.table);
-      }
+      data = json.data || [];
       if (data.length > 0 && !this.whereConds.length) {
         saveLocalTableData(this.table, data);
       }
     } catch (err) {
       updateDbStatus({ connected: false, error: err.message });
-      const local = getLocalTableData(this.table);
-      data = mergeWithDemo(this.table, local);
-      if (!data || data.length === 0) {
-        data = DEMO_SEED_DATA[this.table] || [];
-      }
+      data = getLocalTableData(this.table);
     }
 
     if (this.whereConds.length > 0) {
@@ -1001,43 +791,12 @@ function createDbProxyClient() {
 
 export const sb = createDbProxyClient();
 
-// Auto seed default demo records if not yet populated
+// Ensure staff account exists for login
 try {
-  Object.entries(DEMO_SEED_DATA).forEach(([table, data]) => {
-    const existing = localStorage.getItem('rens_db_' + table);
-    if (existing === null || existing === undefined) {
-      localStorage.setItem('rens_db_' + table, JSON.stringify(data));
-    }
-  });
-
-  // Auto-seed 15 demo fleet & driver records (3 per fleet type) with zone mapping
-  const curLorriesRaw = localStorage.getItem('rens_db_lorries');
-  if (curLorriesRaw) {
-    try {
-      const curLorries = JSON.parse(curLorriesRaw);
-      let updated = false;
-      const seedMap = new Map(DEMO_SEED_DATA.lorries.map(l => [l.plate_no, l.zone]));
-      const enriched = curLorries.map(l => {
-        if (!l.zone && l.plate_no && seedMap.has(l.plate_no)) {
-          updated = true;
-          return { ...l, zone: seedMap.get(l.plate_no) };
-        } else if (!l.zone) {
-          updated = true;
-          return { ...l, zone: 'Zone A' };
-        }
-        return l;
-      });
-      if (updated) {
-        localStorage.setItem('rens_db_lorries', JSON.stringify(enriched));
-      }
-    } catch (_) {}
-  } else {
-    localStorage.setItem('rens_db_lorries', JSON.stringify(DEMO_SEED_DATA.lorries));
-  }
-
-  const curDrivers = JSON.parse(localStorage.getItem('rens_db_drivers') || '[]');
-  if (!curDrivers.length) {
-    localStorage.setItem('rens_db_drivers', JSON.stringify(DEMO_SEED_DATA.drivers));
+  const existingStaff = localStorage.getItem('rens_db_staff');
+  if (!existingStaff || existingStaff === '[]') {
+    localStorage.setItem('rens_db_staff', JSON.stringify(DEMO_SEED_DATA.staff));
+    saveLocalTableData('staff', DEMO_SEED_DATA.staff);
   }
 } catch (_) {}
 
@@ -1078,6 +837,42 @@ export async function nextNo(table, col, prefix) {
   const year = now.getFullYear();
   const month = String(now.getMonth() + 1).padStart(2, '0');
 
+  if (prefix === 'rensorder' || prefix === 'order') {
+    const p = 'rensorder';
+    let maxSeq = 0;
+    try {
+      const localData = JSON.parse(localStorage.getItem('rens_db_' + table) || '[]');
+      if (Array.isArray(localData)) {
+        localData.forEach(item => {
+          const val = item?.[col] || '';
+          const match = String(val).match(new RegExp(`^${p}(\\d+)`, 'i'));
+          if (match && match[1]) {
+            const num = parseInt(match[1], 10);
+            if (!isNaN(num) && num > maxSeq) maxSeq = num;
+          }
+        });
+      }
+    } catch (_) {}
+
+    if (sb) {
+      try {
+        const { data, error } = await sb.from(table).select(col).ilike(col, `${p}%`);
+        if (!error && data && data.length) {
+          data.forEach(item => {
+            const val = item?.[col] || '';
+            const match = String(val).match(new RegExp(`^${p}(\\d+)`, 'i'));
+            if (match && match[1]) {
+              const num = parseInt(match[1], 10);
+              if (!isNaN(num) && num > maxSeq) maxSeq = num;
+            }
+          });
+        }
+      } catch (e) {}
+    }
+
+    return `${p}${String(maxSeq + 1).padStart(2, '0')}`;
+  }
+
   if (prefix === 'Rens' || prefix === 'RJ-Q') {
     const p = `Rens${year}${month}`;
     if (!sb) return `${p}01`;
@@ -1117,6 +912,22 @@ export function jobNoFromQuoteNo(quoteNo) {
   if (!quoteNo) return null;
   const str = String(quoteNo).trim();
 
+  // Format 0: rensorder## -> rensorder##
+  const matchRensOrder = str.match(/^rensorder(\d+)/i);
+  if (matchRensOrder) {
+    const [, seq] = matchRensOrder;
+    const num = parseInt(seq, 10);
+    return `rensorder${String(isNaN(num) ? 1 : num).padStart(2, '0')}`;
+  }
+
+  // Format 0b: RJ-ORDER-#### -> rensorder##
+  const matchRjOrder = str.match(/^RJ-ORDER-(\d+)/i);
+  if (matchRjOrder) {
+    const [, seq] = matchRjOrder;
+    const num = parseInt(seq, 10);
+    return `rensorder${String(isNaN(num) ? 1 : num).padStart(2, '0')}`;
+  }
+
   // Format 1: RensYYYYMM## (e.g. Rens20260805 -> RJ-202608-0005)
   const matchRens = str.match(/^Rens(\d{4})(\d{2})(\d+)/i);
   if (matchRens) {
@@ -1134,7 +945,7 @@ export function jobNoFromQuoteNo(quoteNo) {
     return str;
   }
 
-  return null;
+  return str;
 }
 
 export function normalizeJobNo(no) {
@@ -1344,7 +1155,8 @@ export function isOrderQuotation(q) {
 }
 
 export const nextJobNo = () => nextNo('jobs', 'job_no', 'RJ');
-export const nextQuoteNo = () => nextNo('quotations', 'quote_no', 'Rens');
+export const nextOrderNo = () => nextNo('quotations', 'quote_no', 'rensorder');
+export const nextQuoteNo = () => nextNo('quotations', 'quote_no', 'rensorder');
 export const nextInvoiceNo = () => nextNo('sales_invoices', 'invoice_no', 'INV');
 
 // ── Icons ──────────────────────────────────────────────

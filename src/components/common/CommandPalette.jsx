@@ -15,7 +15,8 @@ import {
   Tag,
   BookUser,
   FileCheck,
-  Receipt
+  Receipt,
+  Sparkles
 } from 'lucide-react';
 import { clearDatabaseData } from '../../lib/supabase';
 

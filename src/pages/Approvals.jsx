@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { sb, fmtMoney, fmtTime, esc, withSST, nextJobNo, jobNoFromQuoteNo, subscribeTable, isContractQuotation, getStorageData } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
+import Pagination from '../components/common/Pagination';
 import { checkIsExistingCustomer } from './Quotations';
 import {
   CheckCircle2,
@@ -23,8 +24,69 @@ import {
   Search,
   Filter,
   RotateCcw,
-  Trash2
+  Trash2,
+  Paperclip,
+  UploadCloud,
+  FileUp,
+  Download,
+  ExternalLink,
+  FileSpreadsheet,
+  FileImage,
+  Maximize2,
+  Plus
 } from 'lucide-react';
+
+export function formatFileSize(bytes) {
+  if (!bytes || isNaN(bytes) || bytes <= 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+}
+
+export function parseInvoiceAttachment(raw) {
+  if (!raw) return null;
+  let parsed = raw;
+  if (typeof raw === 'string') {
+    try {
+      parsed = JSON.parse(raw);
+    } catch (e) {
+      return null;
+    }
+  }
+  if (!parsed || typeof parsed !== 'object') return null;
+
+  // Normalize files array for multi-photo / multi-file support
+  let filesList = [];
+  if (Array.isArray(parsed.files) && parsed.files.length > 0) {
+    filesList = parsed.files.map((f, idx) => ({
+      id: f.id || `file_${idx}_${Math.random().toString(36).substr(2, 6)}`,
+      file_name: f.file_name || f.name || 'Document',
+      file_size: f.file_size || f.size || 0,
+      file_type: f.file_type || f.type || 'application/octet-stream',
+      file_data: f.file_data || f.dataUrl || null,
+      uploaded_at: f.uploaded_at || parsed.uploaded_at || new Date().toISOString()
+    }));
+  } else if (parsed.file_data || parsed.file_name) {
+    filesList = [{
+      id: parsed.id || 'primary_doc',
+      file_name: parsed.file_name || 'Document',
+      file_size: parsed.file_size || 0,
+      file_type: parsed.file_type || 'application/octet-stream',
+      file_data: parsed.file_data || null,
+      uploaded_at: parsed.uploaded_at || new Date().toISOString()
+    }];
+  }
+
+  return {
+    ...parsed,
+    files: filesList,
+    file_name: filesList[0]?.file_name || parsed.file_name,
+    file_size: filesList[0]?.file_size || parsed.file_size,
+    file_type: filesList[0]?.file_type || parsed.file_type,
+    file_data: filesList[0]?.file_data || parsed.file_data
+  };
+}
 
 export default function Approvals() {
   const navigate = useNavigate();
@@ -38,6 +100,7 @@ export default function Approvals() {
   const [focusId, setFocusId] = useState(null);
   const [viewDetailItem, setViewDetailItem] = useState(null);
   const [approvingId, setApprovingId] = useState(null);
+  const [previewDocument, setPreviewDocument] = useState(null);
 
   // Approve Confirmation Popup Modal State
   const [approveConfirmModalItem, setApproveConfirmModalItem] = useState(null);
@@ -100,6 +163,8 @@ export default function Approvals() {
           const isRej = q.status === 'declined' || q.status === 'rejected' || existingAppr?.status === 'rejected';
           const apprStatus = isAppr ? 'approved' : (isRej ? 'rejected' : (existingAppr?.status || 'waiting'));
 
+          const invAttachment = parseInvoiceAttachment(q.invoice_attachment) || parseInvoiceAttachment(existingAppr?.invoice_attachment);
+
           const apprRecord = {
             id: existingAppr?.id || ('appr_' + q.id),
             kind: 'quotation',
@@ -110,7 +175,11 @@ export default function Approvals() {
             flagged: Boolean(q.urgent || existingAppr?.flagged),
             created_at: q.created_at || existingAppr?.created_at || new Date().toISOString(),
             resolved_at: q.owner_approved_at || existingAppr?.resolved_at || (isAppr ? (q.created_at || new Date().toISOString()) : null),
-            quotation: q
+            invoice_attachment: invAttachment,
+            quotation: {
+              ...q,
+              invoice_attachment: invAttachment
+            }
           };
 
           canonicalApprovals.push(apprRecord);
@@ -118,7 +187,11 @@ export default function Approvals() {
           // If existing approval record had an outdated title, ref_id or status, synchronize it in Supabase
           if (existingAppr && (existingAppr.title !== apprRecord.title || existingAppr.ref_id !== q.id || existingAppr.status !== apprStatus)) {
             try {
-              sb.from('approvals').update({ title: apprRecord.title, ref_id: q.id, status: apprStatus }).eq('id', existingAppr.id);
+              const upd = { title: apprRecord.title, ref_id: q.id, status: apprStatus };
+              if (invAttachment && !existingAppr.invoice_attachment) {
+                upd.invoice_attachment = JSON.stringify(invAttachment);
+              }
+              sb.from('approvals').update(upd).eq('id', existingAppr.id);
             } catch (_) {}
           }
         });
@@ -241,6 +314,17 @@ export default function Approvals() {
     return list;
   }, [activeFilter, allApprovals, waitingApprovals, approvedApprovals, historyApprovals, searchQuery]);
 
+  const [page, setPage] = useState(1);
+  const pageSize = 10;
+
+  useEffect(() => {
+    setPage(1);
+  }, [activeFilter, searchQuery]);
+
+  const paginatedQueue = useMemo(() => {
+    return filteredQueue.slice((page - 1) * pageSize, page * pageSize);
+  }, [filteredQueue, page, pageSize]);
+
   const waitingCount = waitingApprovals.length;
   const approvedCount = approvedApprovals.length;
   const flaggedCount = waitingApprovals.filter(x => x.flagged || x.quotation?.urgent).length;
@@ -252,14 +336,64 @@ export default function Approvals() {
     setApproveConfirmModalItem(item);
   };
 
-  const confirmApprove = async () => {
+  const confirmApprove = async (invoiceData = null) => {
     if (!approveConfirmModalItem) return;
     const a = approveConfirmModalItem;
     const id = a.id;
 
     setApprovingId(id);
     try {
-      await sb.from('approvals').update({ status: 'approved', resolved_at: new Date().toISOString() }).eq('id', id);
+      const qObj = a.quotation;
+      const finalQuoteNo = qObj?.quote_no || a.ref_id || 'Quote';
+
+      // Construct invoice payload for multi-file / photo attachment
+      let invoicePayload = null;
+      const filesList = Array.isArray(invoiceData?.files) && invoiceData.files.length > 0
+        ? invoiceData.files
+        : (invoiceData?.file ? [invoiceData.file] : []);
+
+      if (filesList.length > 0) {
+        invoicePayload = {
+          invoice_no: invoiceData?.invoiceNo?.trim() || `INV-${finalQuoteNo}`,
+          invoice_date: invoiceData?.invoiceDate || new Date().toISOString().split('T')[0],
+          invoice_amount: parseFloat(invoiceData?.invoiceAmount) || a.amount || qObj?.rate_amount || 0,
+          file_name: filesList[0].name || filesList[0].file_name || 'Document',
+          file_size: filesList[0].size || filesList[0].file_size || 0,
+          file_type: filesList[0].type || filesList[0].file_type || 'application/octet-stream',
+          file_data: filesList[0].dataUrl || filesList[0].file_data || null,
+          files: filesList.map((f, idx) => ({
+            id: f.id || `file_${idx}_${Math.random().toString(36).substr(2, 6)}`,
+            file_name: f.name || f.file_name || 'Document',
+            file_size: f.size || f.file_size || 0,
+            file_type: f.type || f.file_type || 'application/octet-stream',
+            file_data: f.dataUrl || f.file_data || null,
+            uploaded_at: new Date().toISOString()
+          })),
+          notes: invoiceData?.notes?.trim() || '',
+          uploaded_at: new Date().toISOString(),
+          uploaded_by: staff?.name || 'Executive Owner'
+        };
+      } else if (invoiceData?.invoiceNo?.trim()) {
+        invoicePayload = {
+          invoice_no: invoiceData.invoiceNo.trim(),
+          invoice_date: invoiceData.invoiceDate || new Date().toISOString().split('T')[0],
+          invoice_amount: parseFloat(invoiceData.invoiceAmount) || a.amount || 0,
+          files: [],
+          notes: invoiceData.notes?.trim() || '',
+          uploaded_at: new Date().toISOString(),
+          uploaded_by: staff?.name || 'Executive Owner'
+        };
+      }
+
+      const apprUpdate = {
+        status: 'approved',
+        resolved_at: new Date().toISOString()
+      };
+      if (invoicePayload) {
+        apprUpdate.invoice_attachment = JSON.stringify(invoicePayload);
+      }
+
+      await sb.from('approvals').update(apprUpdate).eq('id', id);
 
       if (a.kind === 'quotation') {
         let { data: q } = await sb.from('quotations').select('*, customer:customers(*)').eq('id', a.ref_id).maybeSingle();
@@ -337,17 +471,26 @@ export default function Approvals() {
 
         // Update all customer quotes to approved
         for (const targetQ of quotesToApprove) {
-          await sb.from('quotations').update({ 
+          const qPatch = { 
             status: 'approved', 
             owner_approved_at: new Date().toISOString(), 
             approved_by: staff?.id 
-          }).eq('id', targetQ.id);
+          };
+          if (invoicePayload) {
+            qPatch.invoice_attachment = JSON.stringify(invoicePayload);
+            qPatch.invoice_no = invoicePayload.invoice_no;
+          }
+          await sb.from('quotations').update(qPatch).eq('id', targetQ.id);
 
           // Update approval record status to approved
-          await sb.from('approvals').update({
+          const apprPatch = {
             status: 'approved',
             resolved_at: new Date().toISOString()
-          }).eq('ref_id', targetQ.id);
+          };
+          if (invoicePayload) {
+            apprPatch.invoice_attachment = JSON.stringify(invoicePayload);
+          }
+          await sb.from('approvals').update(apprPatch).eq('ref_id', targetQ.id);
         }
       } else {
         await sb.from('inventory_issuances').update({ approval_status: 'approved', approved_by: staff?.id, approved_at: new Date().toISOString() }).eq('id', a.ref_id);
@@ -371,14 +514,43 @@ export default function Approvals() {
       await loadData();
 
       if (a.kind === 'quotation') {
-        toast('Quotation & customer approved! Customer & rate card activated for Orders.', 'ok');
+        toast(invoicePayload ? 'Quotation & customer approved with invoice attachment!' : 'Quotation & customer approved! Customer & rate card activated for Orders.', 'ok');
       } else {
         toast('Approved & Released', 'ok');
       }
     } catch (err) {
+      console.error('Error approving request:', err);
       toast('Error approving request', 'err');
     } finally {
       setApprovingId(null);
+    }
+  };
+
+  const handleSaveInvoiceAttachment = async (item, invoicePayload) => {
+    try {
+      const jsonStr = JSON.stringify(invoicePayload);
+      if (item.id) {
+        await sb.from('approvals').update({ invoice_attachment: jsonStr }).eq('id', item.id);
+      }
+      if (item.ref_id) {
+        await sb.from('approvals').update({ invoice_attachment: jsonStr }).eq('ref_id', item.ref_id);
+        if (item.kind === 'quotation') {
+          await sb.from('quotations').update({
+            invoice_attachment: jsonStr,
+            invoice_no: invoicePayload.invoice_no
+          }).eq('id', item.ref_id);
+        }
+      }
+      toast('Invoice attachment saved successfully!', 'ok');
+      await loadData();
+      setViewDetailItem(prev => prev ? {
+        ...prev,
+        invoice_attachment: invoicePayload,
+        quotation: prev.quotation ? { ...prev.quotation, invoice_attachment: invoicePayload } : prev.quotation
+      } : null);
+    } catch (err) {
+      console.error('Error saving invoice attachment:', err);
+      toast('Failed to save invoice attachment', 'err');
     }
   };
 
@@ -678,7 +850,7 @@ export default function Approvals() {
           </thead>
           <tbody>
             {filteredQueue.length > 0 ? (
-              filteredQueue.map((item) => {
+              paginatedQueue.map((item) => {
                 const isQuote = item.kind === 'quotation';
                 const q = item.quotation;
                 const iss = item.issuance;
@@ -709,6 +881,9 @@ export default function Approvals() {
                 const isWaiting = item.status === 'waiting';
                 const isApproved = item.status === 'approved';
                 const isRejected = item.status === 'rejected';
+
+                // Check for invoice attachment
+                const invObj = item.invoice_attachment || parseInvoiceAttachment(q?.invoice_attachment);
 
                 return (
                   <tr
@@ -741,6 +916,27 @@ export default function Approvals() {
                           <span>{formattedDate}</span>
                           {formattedTime && <span style={{ opacity: 0.8 }}>· {formattedTime}</span>}
                         </div>
+                        {invObj && (
+                          <div
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              background: '#EFF6FF',
+                              color: '#1D4ED8',
+                              border: '1px solid #BFDBFE',
+                              borderRadius: '5px',
+                              padding: '1px 6px',
+                              fontSize: '0.65rem',
+                              fontWeight: 700,
+                              marginTop: '2px'
+                            }}
+                            title={`Invoice ${invObj.invoice_no || ''} attached (${invObj.file_name || 'Document'})`}
+                          >
+                            <Paperclip size={10} strokeWidth={2.4} />
+                            <span>{invObj.invoice_no || 'Invoice Attached'}</span>
+                          </div>
+                        )}
                       </div>
                     </td>
 
@@ -851,7 +1047,7 @@ export default function Approvals() {
                             setFocusId(item.id);
                             setViewDetailItem(item);
                           }}
-                          title="View Details in Popup Modal"
+                          title="View Details & Invoice in Popup Modal"
                         >
                           <Eye size={13} strokeWidth={2.2} />
                           <span>View</span>
@@ -932,6 +1128,13 @@ export default function Approvals() {
             )}
           </tbody>
         </table>
+        <Pagination
+          currentPage={page}
+          totalItems={filteredQueue.length}
+          pageSize={pageSize}
+          onPageChange={setPage}
+          itemName="approval requests"
+        />
       </div>
 
       {/* Full Detail Inspection Modal */}
@@ -941,6 +1144,8 @@ export default function Approvals() {
           onClose={() => setViewDetailItem(null)}
           onApprove={(item) => openApproveConfirmation(item)}
           onDelete={(item) => openDeleteConfirmation(item)}
+          onPreviewDocument={(doc) => setPreviewDocument(doc)}
+          onSaveInvoiceAttachment={handleSaveInvoiceAttachment}
           isApproving={approvingId === viewDetailItem.id}
         />
       )}
@@ -951,6 +1156,7 @@ export default function Approvals() {
           item={approveConfirmModalItem}
           onConfirm={confirmApprove}
           onClose={() => setApproveConfirmModalItem(null)}
+          onPreviewDocument={(doc) => setPreviewDocument(doc)}
           isSubmitting={approvingId === approveConfirmModalItem.id}
         />
       )}
@@ -962,6 +1168,14 @@ export default function Approvals() {
           onConfirm={confirmDelete}
           onClose={() => setDeleteConfirmModalItem(null)}
           isDeleting={isDeleting}
+        />
+      )}
+
+      {/* Lightbox / Document Preview Modal */}
+      {previewDocument && (
+        <DocumentPreviewModal
+          document={previewDocument}
+          onClose={() => setPreviewDocument(null)}
         />
       )}
     </div>
@@ -1088,8 +1302,8 @@ function renderSpecialInstructions(raw) {
   );
 }
 
-// Approval Detail Modal for In-Depth Verification
-function ApprovalDetailModal({ item, onClose, onApprove, onDelete, isApproving }) {
+// Approval Detail Modal for In-Depth Verification & Multi-Photo / Document Gallery
+function ApprovalDetailModal({ item, onClose, onApprove, onDelete, isApproving, onPreviewDocument, onSaveInvoiceAttachment }) {
   const isQuote = item.kind === 'quotation';
   const q = item.quotation;
   const iss = item.issuance;
@@ -1103,6 +1317,129 @@ function ApprovalDetailModal({ item, onClose, onApprove, onDelete, isApproving }
     const cleaned = pickup.slice(companyName.length).replace(/^[,.\s-]+/, '').trim();
     if (cleaned) pickup = cleaned;
   }
+
+  // Invoice Attachment Parsing with Multi-File support
+  const invoiceAttachment = parseInvoiceAttachment(q?.invoice_attachment || item.invoice_attachment);
+  const existingFiles = invoiceAttachment?.files || [];
+
+  // Upload/Edit State
+  const [showUploadDrawer, setShowUploadDrawer] = useState(!invoiceAttachment && item.status === 'approved');
+  const [newFiles, setNewFiles] = useState([]);
+  const [isDragging, setIsDragging] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+
+  const handleFilesSelect = (e) => {
+    const fileList = Array.from(e.target.files || []);
+    if (!fileList.length) return;
+
+    fileList.forEach(file => {
+      if (file.size > 10 * 1024 * 1024) {
+        alert(`File ${file.name} exceeds 10MB limit and was skipped.`);
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => {
+        setNewFiles(prev => [
+          ...prev,
+          {
+            id: `new_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+            name: file.name,
+            size: file.size,
+            type: file.type || 'application/octet-stream',
+            dataUrl: reader.result,
+            isImage: file.type?.includes('image') || /\.(png|jpe?g|webp|gif)$/i.test(file.name)
+          }
+        ]);
+      };
+      reader.readAsDataURL(file);
+    });
+    e.target.value = '';
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const fileList = Array.from(e.dataTransfer.files || []);
+    if (!fileList.length) return;
+
+    fileList.forEach(file => {
+      if (file.size > 10 * 1024 * 1024) {
+        alert(`File ${file.name} exceeds 10MB limit and was skipped.`);
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => {
+        setNewFiles(prev => [
+          ...prev,
+          {
+            id: `new_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+            name: file.name,
+            size: file.size,
+            type: file.type || 'application/octet-stream',
+            dataUrl: reader.result,
+            isImage: file.type?.includes('image') || /\.(png|jpe?g|webp|gif)$/i.test(file.name)
+          }
+        ]);
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const removeNewFile = (id) => {
+    setNewFiles(prev => prev.filter(f => f.id !== id));
+  };
+
+  const handleSaveAttachments = async () => {
+    if (newFiles.length === 0 && existingFiles.length === 0) {
+      alert('Please select at least one photo or document to attach.');
+      return;
+    }
+    setIsSaving(true);
+    try {
+      const combinedFiles = [
+        ...existingFiles,
+        ...newFiles.map(f => ({
+          id: f.id,
+          file_name: f.name,
+          file_size: f.size,
+          file_type: f.type,
+          file_data: f.dataUrl,
+          uploaded_at: new Date().toISOString()
+        }))
+      ];
+
+      const payload = {
+        invoice_no: invoiceAttachment?.invoice_no || `INV-${quoteNo}`,
+        invoice_date: invoiceAttachment?.invoice_date || new Date().toISOString().split('T')[0],
+        invoice_amount: invoiceAttachment?.invoice_amount || q?.rate_amount || item?.amount || 0,
+        file_name: combinedFiles[0]?.file_name || 'Document',
+        file_size: combinedFiles[0]?.file_size || 0,
+        file_type: combinedFiles[0]?.file_type || 'application/octet-stream',
+        file_data: combinedFiles[0]?.file_data || null,
+        files: combinedFiles,
+        uploaded_at: new Date().toISOString(),
+        uploaded_by: 'Executive Owner'
+      };
+
+      if (onSaveInvoiceAttachment) {
+        await onSaveInvoiceAttachment(item, payload);
+      }
+      setShowUploadDrawer(false);
+      setNewFiles([]);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDownloadFile = (f) => {
+    if (!f.file_data) return;
+    const link = document.createElement('a');
+    link.href = f.file_data;
+    link.download = f.file_name || 'document';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   return createPortal(
     <div
@@ -1131,7 +1468,7 @@ function ApprovalDetailModal({ item, onClose, onApprove, onDelete, isApproving }
       <div
         className="modalbox tab-fade-in"
         style={{
-          maxWidth: '680px',
+          maxWidth: '760px',
           width: '100%',
           borderRadius: '18px',
           overflow: 'hidden',
@@ -1157,9 +1494,14 @@ function ApprovalDetailModal({ item, onClose, onApprove, onDelete, isApproving }
                 <span className={`badge ${item.status === 'approved' ? 'green' : (item.status === 'rejected' ? 'red' : 'amber')}`} style={{ fontSize: '0.7rem', padding: '2px 8px' }}>
                   {item.status === 'waiting' ? 'Awaiting Decision' : item.status.toUpperCase()}
                 </span>
+                {existingFiles.length > 0 && (
+                  <span style={{ fontSize: '0.68rem', padding: '2px 8px', background: '#EFF6FF', color: '#1D4ED8', border: '1px solid #BFDBFE', borderRadius: '6px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                    <Paperclip size={11} /> {existingFiles.length} Attachment{existingFiles.length > 1 ? 's' : ''}
+                  </span>
+                )}
               </div>
               <p style={{ margin: '3px 0 0', fontSize: '0.8rem', color: 'var(--slate)', fontWeight: 500 }}>
-                {isQuote ? 'Full verification details before dispatching to Job Board.' : 'Inspect parts issuance details and maintenance records.'}
+                {isQuote ? 'Quotation verification & attached photos / document gallery.' : 'Inspect parts issuance details and maintenance records.'}
               </p>
             </div>
           </div>
@@ -1203,6 +1545,220 @@ function ApprovalDetailModal({ item, onClose, onApprove, onDelete, isApproving }
                     {dropoff}
                   </span>
                 </div>
+              </div>
+
+              {/* 📑 MULTIPLE ATTACHED PHOTOS & DOCUMENTS SECTION */}
+              <div style={{ background: '#FFFFFF', border: '1.5px solid #CBD5E1', borderRadius: '14px', padding: '16px 18px', boxShadow: '0 2px 8px rgba(0,0,0,0.03)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div style={{ width: '34px', height: '34px', borderRadius: '8px', background: '#EFF6FF', color: '#2563EB', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <FileImage size={18} strokeWidth={2.4} />
+                    </div>
+                    <div>
+                      <div style={{ fontWeight: 800, fontSize: '0.94rem', color: 'var(--navy-900)' }}>
+                        Attached Photos &amp; Invoices {existingFiles.length > 0 ? `(${existingFiles.length})` : ''}
+                      </div>
+                      <div style={{ fontSize: '0.72rem', color: 'var(--slate)' }}>
+                        {existingFiles.length > 0 ? `${existingFiles.length} photo(s) / document(s) saved for this quotation` : 'No photos or invoice attached yet'}
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    className="btn gh sm"
+                    onClick={() => setShowUploadDrawer(!showUploadDrawer)}
+                    style={{ fontSize: '0.74rem', height: '30px', padding: '0 10px', display: 'inline-flex', alignItems: 'center', gap: '4px', color: 'var(--orange-700)', borderColor: 'rgba(249, 115, 22, 0.3)', fontWeight: 700 }}
+                  >
+                    {showUploadDrawer ? 'Cancel' : '+ Add More Photos'}
+                  </button>
+                </div>
+
+                {/* Existing Photos & Files Gallery */}
+                {existingFiles.length > 0 && (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '12px', marginBottom: showUploadDrawer ? '16px' : 0 }}>
+                    {existingFiles.map((file, idx) => {
+                      const isImg = file.file_type?.includes('image') || /\.(png|jpe?g|webp|gif)$/i.test(file.file_name || '');
+                      return (
+                        <div
+                          key={file.id || idx}
+                          style={{
+                            border: '1px solid #E2E8F0',
+                            borderRadius: '10px',
+                            background: '#F8FAFC',
+                            overflow: 'hidden',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            transition: 'all 0.15s ease'
+                          }}
+                        >
+                          {/* Visual Thumbnail */}
+                          {isImg && file.file_data ? (
+                            <div
+                              onClick={() => onPreviewDocument && onPreviewDocument({
+                                name: file.file_name,
+                                size: file.file_size,
+                                type: file.file_type,
+                                dataUrl: file.file_data
+                              })}
+                              style={{
+                                height: '110px',
+                                background: '#0F172A',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                cursor: 'pointer',
+                                position: 'relative',
+                                overflow: 'hidden'
+                              }}
+                            >
+                              <img
+                                src={file.file_data}
+                                alt={file.file_name}
+                                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                              />
+                              <div style={{ position: 'absolute', bottom: '6px', right: '6px', background: 'rgba(15, 23, 42, 0.8)', color: '#FFFFFF', padding: '2px 6px', borderRadius: '4px', fontSize: '0.65rem', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                <Maximize2 size={10} /> View
+                              </div>
+                            </div>
+                          ) : (
+                            <div style={{ height: '90px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#F1F5F9', color: '#DC2626' }}>
+                              <FileText size={32} />
+                            </div>
+                          )}
+
+                          {/* File Details & Actions */}
+                          <div style={{ padding: '10px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                            <div style={{ fontWeight: 700, fontSize: '0.78rem', color: 'var(--navy-900)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={file.file_name}>
+                              {file.file_name}
+                            </div>
+                            <div style={{ fontSize: '0.68rem', color: 'var(--slate)' }}>
+                              {formatFileSize(file.file_size)}
+                            </div>
+                            <div style={{ display: 'flex', gap: '6px', marginTop: '4px' }}>
+                              {file.file_data && (
+                                <button
+                                  type="button"
+                                  className="btn gh sm"
+                                  onClick={() => onPreviewDocument && onPreviewDocument({
+                                    name: file.file_name,
+                                    size: file.file_size,
+                                    type: file.file_type,
+                                    dataUrl: file.file_data
+                                  })}
+                                  style={{ flex: 1, height: '26px', fontSize: '0.7rem', padding: 0, justifyContent: 'center' }}
+                                >
+                                  Preview
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                className="btn gh sm"
+                                onClick={() => handleDownloadFile(file)}
+                                style={{ height: '26px', width: '28px', padding: 0, justifyContent: 'center' }}
+                                title="Download File"
+                              >
+                                <Download size={12} />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Upload More Photos / Files Drawer */}
+                {showUploadDrawer && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', background: '#F8FAFC', padding: '14px 16px', borderRadius: '12px', border: '1px solid #CBD5E1' }}>
+                    <div style={{ fontWeight: 800, fontSize: '0.84rem', color: 'var(--navy-900)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span>Upload Photos &amp; Documents</span>
+                      <span style={{ fontSize: '0.72rem', color: 'var(--slate)' }}>Select multiple files at once</span>
+                    </div>
+
+                    {/* Multi-file Dropzone */}
+                    <div
+                      onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                      onDragLeave={() => setIsDragging(false)}
+                      onDrop={handleDrop}
+                      style={{
+                        border: isDragging ? '2px dashed #F97316' : '2px dashed #CBD5E1',
+                        borderRadius: '10px',
+                        padding: '18px',
+                        textAlign: 'center',
+                        background: isDragging ? '#FFF7ED' : '#FFFFFF',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease'
+                      }}
+                      onClick={() => document.getElementById('viewModalMultiFileInput')?.click()}
+                    >
+                      <input
+                        type="file"
+                        id="viewModalMultiFileInput"
+                        multiple
+                        accept="image/*,.pdf,.png,.jpg,.jpeg,.webp,.doc,.docx,.xls,.xlsx"
+                        style={{ display: 'none' }}
+                        onChange={handleFilesSelect}
+                      />
+                      <UploadCloud size={28} style={{ color: isDragging ? '#F97316' : 'var(--slate)', margin: '0 auto 6px' }} />
+                      <div style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--navy-900)' }}>
+                        Click to select multiple photos / documents, or drag &amp; drop
+                      </div>
+                      <div style={{ fontSize: '0.7rem', color: 'var(--slate)', marginTop: '2px' }}>
+                        Supports JPG, PNG, WEBP, PDF up to 10MB each
+                      </div>
+                    </div>
+
+                    {/* Staged New Files Preview */}
+                    {newFiles.length > 0 && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        <div style={{ fontSize: '0.74rem', fontWeight: 700, color: '#065F46' }}>
+                          Ready to Attach ({newFiles.length} file{newFiles.length > 1 ? 's' : ''}):
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '8px' }}>
+                          {newFiles.map(f => (
+                            <div key={f.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 10px', background: '#ECFDF5', borderRadius: '8px', border: '1px solid #A7F3D0' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
+                                <CheckCircle2 size={14} color="#059669" style={{ flexShrink: 0 }} />
+                                <span style={{ fontSize: '0.74rem', fontWeight: 700, color: '#065F46', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={f.name}>
+                                  {f.name}
+                                </span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => removeNewFile(f.id)}
+                                style={{ border: 'none', background: 'transparent', color: '#DC2626', cursor: 'pointer', padding: 0, flexShrink: 0, marginLeft: '4px' }}
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '4px' }}>
+                      <button
+                        type="button"
+                        className="btn gh sm"
+                        onClick={() => { setShowUploadDrawer(false); setNewFiles([]); }}
+                        style={{ height: '32px', padding: '0 12px', fontSize: '0.78rem' }}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        className="btn pri sm"
+                        disabled={isSaving || newFiles.length === 0}
+                        onClick={handleSaveAttachments}
+                        style={{ height: '32px', padding: '0 16px', fontSize: '0.78rem', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+                      >
+                        <FileCheck size={14} />
+                        {isSaving ? 'Saving...' : `Save ${newFiles.length > 0 ? `(${newFiles.length})` : ''} Attachment${newFiles.length > 1 ? 's' : ''}`}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Cargo & Requirements */}
@@ -1334,12 +1890,83 @@ function ApprovalDetailModal({ item, onClose, onApprove, onDelete, isApproving }
   );
 }
 
-// Approve Confirmation Modal Component
-function ApproveConfirmationModal({ item, onConfirm, onClose, isSubmitting }) {
+// Approve Confirmation Modal Component with Multi-Photo & Document Upload
+function ApproveConfirmationModal({ item, onConfirm, onClose, onPreviewDocument, isSubmitting }) {
   const isQuote = item?.kind === 'quotation';
   const q = item?.quotation;
   const quoteNo = q?.quote_no || item?.ref_id || 'Quotation';
   const companyName = q?.customer?.company_name || q?.customer_name || (item?.title && item.title.includes('-') ? item.title.split('-')[1].trim() : 'Customer');
+
+  // Multiple Files / Photos State
+  const [files, setFiles] = useState([]);
+  const [isDragging, setIsDragging] = useState(false);
+
+  const handleFilesSelect = (e) => {
+    const selected = Array.from(e.target.files || []);
+    if (!selected.length) return;
+
+    selected.forEach(file => {
+      if (file.size > 10 * 1024 * 1024) {
+        alert(`File ${file.name} exceeds 10MB limit and was skipped.`);
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => {
+        setFiles(prev => [
+          ...prev,
+          {
+            id: `file_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+            name: file.name,
+            size: file.size,
+            type: file.type || 'application/octet-stream',
+            dataUrl: reader.result,
+            isImage: file.type?.includes('image') || /\.(png|jpe?g|webp|gif)$/i.test(file.name)
+          }
+        ]);
+      };
+      reader.readAsDataURL(file);
+    });
+    e.target.value = '';
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const dropped = Array.from(e.dataTransfer.files || []);
+    if (!dropped.length) return;
+
+    dropped.forEach(file => {
+      if (file.size > 10 * 1024 * 1024) {
+        alert(`File ${file.name} exceeds 10MB limit and was skipped.`);
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => {
+        setFiles(prev => [
+          ...prev,
+          {
+            id: `file_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+            name: file.name,
+            size: file.size,
+            type: file.type || 'application/octet-stream',
+            dataUrl: reader.result,
+            isImage: file.type?.includes('image') || /\.(png|jpe?g|webp|gif)$/i.test(file.name)
+          }
+        ]);
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const removeFile = (id) => {
+    setFiles(prev => prev.filter(f => f.id !== id));
+  };
+
+  const handleConfirmSubmit = () => {
+    onConfirm({
+      files: files
+    });
+  };
 
   return createPortal(
     <div
@@ -1368,8 +1995,9 @@ function ApproveConfirmationModal({ item, onConfirm, onClose, isSubmitting }) {
       <div
         className="modalbox tab-fade-in"
         style={{
-          maxWidth: '480px',
+          maxWidth: '540px',
           width: '100%',
+          maxHeight: '92vh',
           borderRadius: '18px',
           overflow: 'hidden',
           background: '#FFFFFF',
@@ -1380,7 +2008,7 @@ function ApproveConfirmationModal({ item, onConfirm, onClose, isSubmitting }) {
         }}
       >
         {/* Header */}
-        <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--line)', background: '#F8FAFC', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+        <div style={{ padding: '18px 24px', borderBottom: '1px solid var(--line)', background: '#F8FAFC', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <div style={{ width: '42px', height: '42px', borderRadius: '12px', background: '#F0FDF4', color: '#16A34A', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, border: '1px solid #DCFCE7' }}>
               <CheckCircle2 size={22} strokeWidth={2.4} />
@@ -1390,7 +2018,7 @@ function ApproveConfirmationModal({ item, onConfirm, onClose, isSubmitting }) {
                 {isQuote ? 'Confirm Quotation Approval' : 'Confirm Stock Approval'}
               </h3>
               <p style={{ margin: '3px 0 0', fontSize: '0.78rem', color: 'var(--slate)', fontWeight: 500 }}>
-                Executive authorization confirmation
+                Executive authorization &amp; multi-photo invoice attachment
               </p>
             </div>
           </div>
@@ -1405,27 +2033,147 @@ function ApproveConfirmationModal({ item, onConfirm, onClose, isSubmitting }) {
         </div>
 
         {/* Body */}
-        <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+        <div style={{ padding: '20px 24px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '14px' }}>
           {/* Target Item summary card */}
-          <div style={{ background: '#F8FAFC', borderRadius: '12px', padding: '14px 16px', border: '1px solid #E2E8F0', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <div style={{ background: '#F8FAFC', borderRadius: '12px', padding: '12px 16px', border: '1px solid #E2E8F0' }}>
             <div>
               <span className="jno-pill" style={{ fontSize: '0.8rem', padding: '2px 8px', fontWeight: 800 }}>
-                {isQuote ? quoteNo : item.ref_id}
+                {isQuote ? quoteNo : item?.ref_id}
               </span>
-            </div>
-
-            <div style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--navy-900)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <Building2 size={15} style={{ color: 'var(--slate)', flexShrink: 0 }} />
-              <span>{companyName}</span>
+              <div style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--navy-900)', display: 'flex', alignItems: 'center', gap: '6px', marginTop: '6px' }}>
+                <Building2 size={15} style={{ color: 'var(--slate)', flexShrink: 0 }} />
+                <span>{companyName}</span>
+              </div>
             </div>
           </div>
 
-          <p style={{ margin: 0, fontSize: '0.84rem', color: 'var(--navy-900)', lineHeight: '1.45' }}>
+          {/* Multiple Photos / Invoices Upload Box */}
+          {isQuote && (
+            <div style={{ border: '1.5px solid #CBD5E1', borderRadius: '12px', padding: '14px', background: '#F8FAFC', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ fontWeight: 800, fontSize: '0.84rem', color: 'var(--navy-900)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Paperclip size={15} style={{ color: 'var(--orange)' }} />
+                  <span>Attach Photos / Invoice for this Quotation</span>
+                </div>
+                {files.length > 0 ? (
+                  <span style={{ fontSize: '0.7rem', color: '#047857', background: '#ECFDF5', padding: '2px 8px', borderRadius: '6px', border: '1px solid #A7F3D0', fontWeight: 700 }}>
+                    {files.length} Photo{files.length > 1 ? 's' : ''} / File{files.length > 1 ? 's' : ''}
+                  </span>
+                ) : (
+                  <span style={{ fontSize: '0.7rem', color: 'var(--slate)', background: '#FFFFFF', padding: '2px 6px', borderRadius: '4px', border: '1px solid #E2E8F0' }}>
+                    Optional / Multiple
+                  </span>
+                )}
+              </div>
+
+              {/* Multi-file Dropzone */}
+              <div
+                onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                onDragLeave={() => setIsDragging(false)}
+                onDrop={handleDrop}
+                style={{
+                  border: isDragging ? '2px dashed #F97316' : '1.5px dashed #CBD5E1',
+                  borderRadius: '10px',
+                  padding: files.length > 0 ? '12px' : '18px',
+                  textAlign: 'center',
+                  background: isDragging ? '#FFF7ED' : '#FFFFFF',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease'
+                }}
+                onClick={() => document.getElementById('approveModalMultiFileInput')?.click()}
+              >
+                <input
+                  type="file"
+                  id="approveModalMultiFileInput"
+                  multiple
+                  accept="image/*,.pdf,.png,.jpg,.jpeg,.webp,.doc,.docx,.xls,.xlsx"
+                  style={{ display: 'none' }}
+                  onChange={handleFilesSelect}
+                />
+
+                <UploadCloud size={24} style={{ color: isDragging ? '#F97316' : 'var(--slate)', margin: '0 auto 4px' }} />
+                <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--navy-900)' }}>
+                  {files.length > 0 ? '+ Click to add more photos / files' : 'Click to upload multiple photos or drag & drop'}
+                </div>
+                <div style={{ fontSize: '0.68rem', color: 'var(--slate)', marginTop: '2px' }}>
+                  Supports multiple JPG, PNG, WEBP, PDF up to 10MB each
+                </div>
+              </div>
+
+              {/* Uploaded Files Grid Preview */}
+              {files.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '2px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: '8px', maxHeight: '180px', overflowY: 'auto', padding: '4px 2px' }}>
+                    {files.map((file, idx) => (
+                      <div
+                        key={file.id || idx}
+                        style={{
+                          border: '1px solid #A7F3D0',
+                          background: '#ECFDF5',
+                          borderRadius: '8px',
+                          overflow: 'hidden',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          position: 'relative'
+                        }}
+                      >
+                        {/* Image Thumbnail or File Icon */}
+                        {file.isImage && file.dataUrl ? (
+                          <div style={{ height: '70px', background: '#0F172A', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <img src={file.dataUrl} alt={file.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          </div>
+                        ) : (
+                          <div style={{ height: '60px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#F1F5F9', color: '#DC2626' }}>
+                            <FileText size={24} />
+                          </div>
+                        )}
+
+                        {/* File Name & Remove Button */}
+                        <div style={{ padding: '6px 8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px' }}>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#065F46', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={file.name}>
+                              {file.name}
+                            </div>
+                            <div style={{ fontSize: '0.64rem', color: '#047857' }}>
+                              {formatFileSize(file.size)}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); removeFile(file.id); }}
+                            style={{ border: 'none', background: 'transparent', color: '#DC2626', cursor: 'pointer', padding: '2px', flexShrink: 0 }}
+                            title="Remove Photo"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '4px' }}>
+                    <span style={{ fontSize: '0.72rem', color: '#065F46', fontWeight: 700 }}>
+                      ✓ {files.length} photo{files.length > 1 ? 's' : ''} selected
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setFiles([])}
+                      style={{ border: 'none', background: 'transparent', color: '#DC2626', fontSize: '0.72rem', fontWeight: 600, cursor: 'pointer', textDecoration: 'underline' }}
+                    >
+                      Clear all
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          <p style={{ margin: 0, fontSize: '0.82rem', color: 'var(--navy-900)', lineHeight: '1.45' }}>
             Are you sure you want to authorize this request? Approving will:
           </p>
 
-          <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '0.8rem', color: 'var(--slate)', lineHeight: '1.6' }}>
-            <li>Mark status as <b>Approved</b> in the executive audit trail.</li>
+          <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '0.78rem', color: 'var(--slate)', lineHeight: '1.6' }}>
+            <li>Mark status as <b>Approved</b> and archive attached photos/invoice.</li>
             <li>Activate customer account and pricing rate cards.</li>
             <li>Automatically dispatch an unassigned job to the <b>Job Board</b>.</li>
           </ul>
@@ -1443,7 +2191,7 @@ function ApproveConfirmationModal({ item, onConfirm, onClose, isSubmitting }) {
           </button>
           <button
             className="btn pri"
-            onClick={onConfirm}
+            onClick={handleConfirmSubmit}
             disabled={isSubmitting}
             style={{
               height: '38px',
@@ -1458,7 +2206,7 @@ function ApproveConfirmationModal({ item, onConfirm, onClose, isSubmitting }) {
             }}
           >
             <Check size={15} strokeWidth={2.8} />
-            {isSubmitting ? 'Authorising...' : 'Confirm & Authorise'}
+            {isSubmitting ? 'Authorising...' : `Confirm & Authorise${files.length > 0 ? ` (${files.length} Photo${files.length > 1 ? 's' : ''})` : ''}`}
           </button>
         </div>
       </div>
@@ -1594,6 +2342,133 @@ function DeleteConfirmationModal({ item, onConfirm, onClose, isDeleting }) {
             <Trash2 size={15} strokeWidth={2.4} />
             {isDeleting ? 'Deleting...' : 'Confirm & Delete'}
           </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+// Lightbox Document / PDF / Image Preview Modal
+function DocumentPreviewModal({ document: doc, onClose }) {
+  if (!doc) return null;
+
+  const isPdf = doc.type?.includes('pdf') || doc.name?.toLowerCase().endsWith('.pdf');
+  const isImage = doc.type?.includes('image') || /\.(png|jpe?g|webp|gif)$/i.test(doc.name || '');
+
+  const handleDownload = () => {
+    if (!doc.dataUrl) return;
+    const link = document.createElement('a');
+    link.href = doc.dataUrl;
+    link.download = doc.name || 'invoice_document';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  return createPortal(
+    <div
+      className="overlay open"
+      id="docPreviewOverlay"
+      style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        width: '100vw',
+        height: '100vh',
+        zIndex: 9999999,
+        background: 'rgba(15, 23, 42, 0.85)',
+        backdropFilter: 'blur(10px)',
+        WebkitBackdropFilter: 'blur(10px)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '20px',
+        boxSizing: 'border-box'
+      }}
+      onClick={(e) => e.target.id === 'docPreviewOverlay' && onClose()}
+    >
+      <div
+        className="modalbox tab-fade-in"
+        style={{
+          maxWidth: '860px',
+          width: '100%',
+          maxHeight: '92vh',
+          borderRadius: '18px',
+          overflow: 'hidden',
+          background: '#0F172A',
+          boxShadow: '0 25px 60px -15px rgba(0, 0, 0, 0.6)',
+          border: '1px solid rgba(255, 255, 255, 0.1)',
+          display: 'flex',
+          flexDirection: 'column'
+        }}
+      >
+        {/* Header */}
+        <div style={{ padding: '16px 20px', borderBottom: '1px solid rgba(255,255,255,0.1)', background: '#1E293B', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{ width: '36px', height: '36px', borderRadius: '8px', background: 'rgba(249, 115, 22, 0.2)', color: '#F97316', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <FileText size={20} />
+            </div>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: '0.92rem', color: '#FFFFFF', maxWidth: '400px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {doc.name || 'Invoice Document'}
+              </div>
+              <div style={{ fontSize: '0.74rem', color: '#94A3B8' }}>
+                {doc.size ? formatFileSize(doc.size) : ''} {doc.type ? `• ${doc.type}` : ''}
+              </div>
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <button
+              className="btn sm"
+              onClick={handleDownload}
+              style={{ background: '#F97316', color: '#FFFFFF', border: 'none', borderRadius: '8px', padding: '0 12px', height: '32px', display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '0.78rem', fontWeight: 700 }}
+            >
+              <Download size={14} /> Download
+            </button>
+            <button
+              onClick={onClose}
+              style={{ width: '32px', height: '32px', borderRadius: '8px', background: 'rgba(255,255,255,0.1)', border: 'none', color: '#FFFFFF', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+            >
+              <X size={16} />
+            </button>
+          </div>
+        </div>
+
+        {/* Content Preview */}
+        <div style={{ flex: 1, minHeight: '380px', maxHeight: '72vh', background: '#090D16', overflow: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}>
+          {isPdf ? (
+            <iframe
+              src={doc.dataUrl}
+              title={doc.name || 'PDF Preview'}
+              style={{ width: '100%', height: '65vh', border: 'none', borderRadius: '8px', background: '#FFFFFF' }}
+            />
+          ) : isImage ? (
+            <img
+              src={doc.dataUrl}
+              alt={doc.name || 'Invoice Preview'}
+              style={{ maxWidth: '100%', maxHeight: '68vh', objectFit: 'contain', borderRadius: '8px', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}
+            />
+          ) : (
+            <div style={{ textAlign: 'center', color: '#94A3B8', padding: '40px 20px' }}>
+              <FileSpreadsheet size={48} style={{ color: '#F97316', marginBottom: '12px' }} />
+              <div style={{ color: '#FFFFFF', fontWeight: 700, fontSize: '1rem', marginBottom: '6px' }}>
+                Preview Not Supported In-Browser
+              </div>
+              <div style={{ fontSize: '0.82rem', marginBottom: '16px' }}>
+                Please download the file to view its full contents.
+              </div>
+              <button
+                className="btn pri sm"
+                onClick={handleDownload}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', margin: '0 auto' }}
+              >
+                <Download size={14} /> Download File
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>,

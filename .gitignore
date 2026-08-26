@@ -3,3 +3,4 @@ dist/
 *.lnk
 .DS_Store
 Thumbs.db
+.env

@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { sb, fmtMoney, jobNoFromQuoteNo, deduplicateJobs, subscribeTable, getStorageData } from '../lib/supabase';
 import { useToast } from '../context/ToastContext';
+import Pagination from '../components/common/Pagination';
 import {
   Search,
   X,
@@ -26,6 +27,7 @@ import {
   Fuel,
   Coins,
   PackageCheck,
+  PackagePlus,
   Building2,
   Clock,
   Sparkles
@@ -57,6 +59,8 @@ export default function ExpensesReport() {
     driver_salary: '',
     salary_payment_mode: 'cash', // 'cash' | 'invoice'
     toll_charges: '',
+    loading_charges: '',
+    unloading_charges: '',
     loading_unloading_charges: '',
     custom_expenses: [], // Array of { id, name, amount }
     notes: ''
@@ -96,7 +100,7 @@ export default function ExpensesReport() {
           let pTime = job.pickup_time || '';
           let dTime = job.dropoff_time || '';
 
-          let resolvedJobNo = job.job_no;
+          let resolvedJobNo = linkedQ?.quote_no || job.job_no;
           if (linkedQ && linkedQ.quote_no) {
             const syncd = jobNoFromQuoteNo(linkedQ.quote_no);
             if (syncd) resolvedJobNo = syncd;
@@ -115,6 +119,7 @@ export default function ExpensesReport() {
           return {
             ...job,
             job_no: resolvedJobNo,
+            quote_no: linkedQ?.quote_no || job.quote_no || resolvedJobNo,
             collection_date: cDate,
             delivery_date: dDate,
             pickup_time: pTime,
@@ -165,12 +170,6 @@ export default function ExpensesReport() {
   // Resolve Customer Name
   const resolveCustomerName = (card) => {
     if (!card) return 'Direct Customer';
-    if (card.job_no === 'Q010/05/25' || card.customer_ref?.includes('Q010/05/25') || card.quotation_id === 'quo-aureumaex-01' || card.customer_id === 'cust-aureumaex') {
-      return 'AUREUMAEX INDUSTRIES (M) SDN BHD';
-    }
-    if (card.job_no === 'REV-3-6' || card.customer_ref?.includes('REV-3-6') || card.customer_ref?.includes('Rev: 3 6') || card.quotation_id === 'quo-tokopak-01' || card.customer_id === 'cust-tokopak') {
-      return 'TOKOPAK SDN. BHD.';
-    }
     return card.customer?.company_name ||
            card.customer_name ||
            (card.pickup_location && !card.pickup_location.toLowerCase().startsWith('pt ') && !card.pickup_location.toLowerCase().startsWith('no') ? card.pickup_location.split(',')[0].trim() : null) ||
@@ -187,7 +186,9 @@ export default function ExpensesReport() {
     const diesel = parseFloat(job.diesel_expense || job.diesel_cost) || 0;
     const salary = parseFloat(job.driver_salary) || 0;
     const toll = parseFloat(job.toll_charges || job.tng_cost) || 0;
-    const loading = parseFloat(job.loading_unloading_charges) || 0;
+    const loading = parseFloat(job.loading_charges) || 0;
+    const unloading = parseFloat(job.unloading_charges) || 0;
+    const legacyLoading = (loading + unloading > 0) ? (loading + unloading) : (parseFloat(job.loading_unloading_charges) || 0);
     const maint = parseFloat(job.maintenance_cost) || 0;
     
     let customSum = 0;
@@ -197,7 +198,7 @@ export default function ExpensesReport() {
       customSum = parseFloat(job.extra_expenses) || 0;
     }
 
-    const total = diesel + salary + toll + loading + maint + customSum;
+    const total = diesel + salary + toll + legacyLoading + maint + customSum;
     return total;
   };
 
@@ -208,6 +209,8 @@ export default function ExpensesReport() {
       (parseFloat(job.diesel_expense || job.diesel_cost) > 0) ||
       (parseFloat(job.driver_salary) > 0) ||
       (parseFloat(job.toll_charges || job.tng_cost) > 0) ||
+      (parseFloat(job.loading_charges) > 0) ||
+      (parseFloat(job.unloading_charges) > 0) ||
       (parseFloat(job.loading_unloading_charges) > 0) ||
       (Array.isArray(job.custom_expenses) && job.custom_expenses.length > 0) ||
       (parseFloat(job.total_expenses) > 0)
@@ -240,6 +243,17 @@ export default function ExpensesReport() {
       return true;
     });
   }, [jobs, lorryFilter, expenseStatusFilter, searchQuery, lorries]);
+
+  const [page, setPage] = useState(1);
+  const pageSize = 10;
+
+  useEffect(() => {
+    setPage(1);
+  }, [lorryFilter, expenseStatusFilter, searchQuery]);
+
+  const paginatedJobs = useMemo(() => {
+    return filteredJobs.slice((page - 1) * pageSize, page * pageSize);
+  }, [filteredJobs, page, pageSize]);
 
   // Overall totals
   const pageTotals = useMemo(() => {
@@ -279,6 +293,8 @@ export default function ExpensesReport() {
       driver_salary: job.driver_salary !== undefined ? String(job.driver_salary || '') : '',
       salary_payment_mode: job.salary_payment_mode || 'cash',
       toll_charges: job.toll_charges !== undefined ? String(job.toll_charges || '') : (job.tng_cost ? String(job.tng_cost) : ''),
+      loading_charges: job.loading_charges !== undefined ? String(job.loading_charges || '') : (job.loading_unloading_charges !== undefined && !job.unloading_charges ? String(job.loading_unloading_charges || '') : ''),
+      unloading_charges: job.unloading_charges !== undefined ? String(job.unloading_charges || '') : '',
       loading_unloading_charges: job.loading_unloading_charges !== undefined ? String(job.loading_unloading_charges || '') : '',
       custom_expenses: existingCustom.length > 0 ? existingCustom : [],
       notes: job.expense_notes || ''
@@ -317,9 +333,10 @@ export default function ExpensesReport() {
     const diesel = parseFloat(expenseForm.diesel_expense) || 0;
     const salary = parseFloat(expenseForm.driver_salary) || 0;
     const toll = parseFloat(expenseForm.toll_charges) || 0;
-    const loading = parseFloat(expenseForm.loading_unloading_charges) || 0;
+    const loading = parseFloat(expenseForm.loading_charges) || 0;
+    const unloading = parseFloat(expenseForm.unloading_charges) || 0;
     const custom = expenseForm.custom_expenses.reduce((s, c) => s + (parseFloat(c.amount) || 0), 0);
-    return diesel + salary + toll + loading + custom;
+    return diesel + salary + toll + loading + unloading + custom;
   }, [expenseForm]);
 
   // Save Expense Report
@@ -331,13 +348,15 @@ export default function ExpensesReport() {
     const diesel = parseFloat(expenseForm.diesel_expense) || 0;
     const salary = parseFloat(expenseForm.driver_salary) || 0;
     const toll = parseFloat(expenseForm.toll_charges) || 0;
-    const loading = parseFloat(expenseForm.loading_unloading_charges) || 0;
+    const loading = parseFloat(expenseForm.loading_charges) || 0;
+    const unloading = parseFloat(expenseForm.unloading_charges) || 0;
+    const combinedLoading = loading + unloading;
     const custom = expenseForm.custom_expenses
       .filter(c => c.name.trim() || parseFloat(c.amount) > 0)
       .map(c => ({ id: c.id, name: c.name.trim() || 'Custom Expense', amount: parseFloat(c.amount) || 0 }));
     
     const customTotal = custom.reduce((s, c) => s + c.amount, 0);
-    const totalExpenses = diesel + salary + toll + loading + customTotal;
+    const totalExpenses = diesel + salary + toll + loading + unloading + customTotal;
 
     const patch = {
       diesel_expense: diesel,
@@ -346,7 +365,9 @@ export default function ExpensesReport() {
       salary_payment_mode: expenseForm.salary_payment_mode,
       toll_charges: toll,
       tng_cost: toll,
-      loading_unloading_charges: loading,
+      loading_charges: loading,
+      unloading_charges: unloading,
+      loading_unloading_charges: combinedLoading,
       custom_expenses: custom,
       extra_expenses: customTotal,
       total_expenses: totalExpenses,
@@ -418,7 +439,7 @@ export default function ExpensesReport() {
             </span>
           </h1>
           <div className="sub" style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-            <span>Manage operating expenses for delivered trips (Diesel, Driver Salary, Tolls, Loading/Unloading &amp; Custom Costs)</span>
+            <span>Manage operating expenses for delivered trips (Diesel, Driver Salary, Tolls, Loading, Unloading &amp; Custom Costs)</span>
             <span style={{ opacity: 0.4 }}>•</span>
             <span>Syncs directly with Sales &amp; Targets Lorry Daily Expenses</span>
           </div>
@@ -553,7 +574,7 @@ export default function ExpensesReport() {
           <table className="grid" style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
             <thead>
               <tr>
-                <th style={{ width: '12%', padding: '10px 8px', textAlign: 'left', verticalAlign: 'middle', whiteSpace: 'nowrap', fontSize: '0.72rem' }}>Job # &amp; Date</th>
+                <th style={{ width: '12%', padding: '10px 8px', textAlign: 'left', verticalAlign: 'middle', whiteSpace: 'nowrap', fontSize: '0.72rem' }}>Order / Job # &amp; Date</th>
                 <th style={{ width: '14%', padding: '10px 8px', textAlign: 'left', verticalAlign: 'middle', whiteSpace: 'nowrap', fontSize: '0.72rem' }}>Customer</th>
                 <th style={{ width: '12%', padding: '10px 8px', textAlign: 'left', verticalAlign: 'middle', whiteSpace: 'nowrap', fontSize: '0.72rem' }}>Route</th>
                 <th style={{ width: '12%', padding: '10px 8px', textAlign: 'left', verticalAlign: 'middle', whiteSpace: 'nowrap', fontSize: '0.72rem' }}>Cargo / Specs</th>
@@ -565,7 +586,7 @@ export default function ExpensesReport() {
             </thead>
             <tbody>
               {filteredJobs.length > 0 ? (
-                filteredJobs.map(card => {
+                paginatedJobs.map(card => {
                   const crew = (card.job_crew || []).sort((a, b) => a.role === 'driver' ? -1 : 1);
                   const lorry = lorries.find(l => l.id === card.lorry_id);
                   const pickup = card.pickup_location || card.origin || 'Port Klang';
@@ -587,7 +608,7 @@ export default function ExpensesReport() {
                       {/* 1. Job # & Date */}
                       <td style={{ verticalAlign: 'middle', padding: '8px 8px', textAlign: 'left', whiteSpace: 'nowrap' }}>
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '2px' }}>
-                          <span className="jno-pill" style={{ fontSize: '0.72rem', padding: '1px 4px' }}>{card.job_no}</span>
+                          <span className="jno-pill" style={{ fontSize: '0.72rem', padding: '1px 4px' }}>{card.quote_no || card.job_no}</span>
                           {Boolean(card.urgent) && (
                             <span className="badge urgent" style={{ fontSize: '0.54rem', padding: '1px 3px', width: 'fit-content', display: 'inline-flex', alignItems: 'center', gap: '2px' }}>
                               <AlertTriangle size={8} strokeWidth={2.5} />
@@ -730,6 +751,13 @@ export default function ExpensesReport() {
               )}
             </tbody>
           </table>
+          <Pagination
+            currentPage={page}
+            totalItems={filteredJobs.length}
+            pageSize={pageSize}
+            onPageChange={setPage}
+            itemName="delivered orders"
+          />
         </div>
       </div>
 
@@ -785,13 +813,13 @@ export default function ExpensesReport() {
 
             {/* Modal Body Form */}
             <form onSubmit={handleSaveExpenses} style={{ padding: '22px 28px 24px' }}>
-              {/* Row 1: 4 Main Expense Cards with Perfect Alignment and Equal Height */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '14px', marginBottom: '18px' }}>
+              {/* Row 1: 5 Main Expense Cards with Perfect Alignment and Equal Height */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '12px', marginBottom: '18px' }}>
                 {/* 1. Diesel Expenses */}
-                <div style={{ background: '#F8FAFC', padding: '16px', borderRadius: '16px', border: '1px solid #E2E8F0', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: '142px' }}>
+                <div style={{ background: '#F8FAFC', padding: '14px', borderRadius: '16px', border: '1px solid #E2E8F0', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: '142px' }}>
                   <div>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.82rem', fontWeight: 800, color: 'var(--navy-900)', marginBottom: '10px' }}>
-                      <Fuel size={16} style={{ color: '#F97316' }} />
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', fontWeight: 800, color: 'var(--navy-900)', marginBottom: '10px' }}>
+                      <Fuel size={15} style={{ color: '#F97316' }} />
                       Diesel Expenses
                     </label>
                     <div style={{ position: 'relative' }}>
@@ -806,10 +834,10 @@ export default function ExpensesReport() {
                         style={{
                           width: '100%',
                           height: '42px',
-                          padding: '0 12px 0 42px',
+                          padding: '0 10px 0 40px',
                           borderRadius: '10px',
                           border: '1px solid #CBD5E1',
-                          fontSize: '0.96rem',
+                          fontSize: '0.94rem',
                           fontWeight: 800,
                           color: 'var(--navy-900)',
                           background: '#FFFFFF',
@@ -819,17 +847,17 @@ export default function ExpensesReport() {
                       />
                     </div>
                   </div>
-                  <div style={{ fontSize: '0.72rem', color: 'var(--slate)', marginTop: '8px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <div style={{ fontSize: '0.7rem', color: 'var(--slate)', marginTop: '8px', display: 'flex', alignItems: 'center', gap: '4px' }}>
                     <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#F97316' }}></span>
                     <span>Fuel card / receipts</span>
                   </div>
                 </div>
 
                 {/* 2. Driver Salary with Cash/Invoice selector */}
-                <div style={{ background: '#F8FAFC', padding: '16px', borderRadius: '16px', border: '1px solid #E2E8F0', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: '142px' }}>
+                <div style={{ background: '#F8FAFC', padding: '14px', borderRadius: '16px', border: '1px solid #E2E8F0', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: '142px' }}>
                   <div>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.82rem', fontWeight: 800, color: 'var(--navy-900)', marginBottom: '10px' }}>
-                      <Coins size={16} style={{ color: '#059669' }} />
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', fontWeight: 800, color: 'var(--navy-900)', marginBottom: '10px' }}>
+                      <Coins size={15} style={{ color: '#059669' }} />
                       Driver Salary
                     </label>
                     <div style={{ position: 'relative' }}>
@@ -844,10 +872,10 @@ export default function ExpensesReport() {
                         style={{
                           width: '100%',
                           height: '42px',
-                          padding: '0 12px 0 42px',
+                          padding: '0 10px 0 40px',
                           borderRadius: '10px',
                           border: '1px solid #CBD5E1',
-                          fontSize: '0.96rem',
+                          fontSize: '0.94rem',
                           fontWeight: 800,
                           color: 'var(--navy-900)',
                           background: '#FFFFFF',
@@ -858,7 +886,7 @@ export default function ExpensesReport() {
                     </div>
                   </div>
                   {/* Segmented Payment Mode selector */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', background: '#E2E8F0', padding: '3px', borderRadius: '8px', marginTop: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '3px', background: '#E2E8F0', padding: '2px', borderRadius: '8px', marginTop: '8px' }}>
                     <button
                       type="button"
                       onClick={() => setExpenseForm({ ...expenseForm, salary_payment_mode: 'cash' })}
@@ -868,19 +896,19 @@ export default function ExpensesReport() {
                         background: expenseForm.salary_payment_mode === 'cash' ? '#FFFFFF' : 'transparent',
                         color: expenseForm.salary_payment_mode === 'cash' ? '#059669' : '#64748B',
                         fontWeight: 800,
-                        fontSize: '0.74rem',
-                        padding: '4px 6px',
+                        fontSize: '0.72rem',
+                        padding: '4px 4px',
                         borderRadius: '6px',
                         cursor: 'pointer',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        gap: '4px',
+                        gap: '3px',
                         boxShadow: expenseForm.salary_payment_mode === 'cash' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
                         transition: 'all 0.15s ease'
                       }}
                     >
-                      <Banknote size={13} /> Cash
+                      <Banknote size={12} /> Cash
                     </button>
                     <button
                       type="button"
@@ -891,28 +919,28 @@ export default function ExpensesReport() {
                         background: expenseForm.salary_payment_mode === 'invoice' ? '#FFFFFF' : 'transparent',
                         color: expenseForm.salary_payment_mode === 'invoice' ? '#2563EB' : '#64748B',
                         fontWeight: 800,
-                        fontSize: '0.74rem',
-                        padding: '4px 6px',
+                        fontSize: '0.72rem',
+                        padding: '4px 4px',
                         borderRadius: '6px',
                         cursor: 'pointer',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        gap: '4px',
+                        gap: '3px',
                         boxShadow: expenseForm.salary_payment_mode === 'invoice' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
                         transition: 'all 0.15s ease'
                       }}
                     >
-                      <FileText size={13} /> Invoice
+                      <FileText size={12} /> Invoice
                     </button>
                   </div>
                 </div>
 
                 {/* 3. Toll Charges */}
-                <div style={{ background: '#F8FAFC', padding: '16px', borderRadius: '16px', border: '1px solid #E2E8F0', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: '142px' }}>
+                <div style={{ background: '#F8FAFC', padding: '14px', borderRadius: '16px', border: '1px solid #E2E8F0', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: '142px' }}>
                   <div>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.82rem', fontWeight: 800, color: 'var(--navy-900)', marginBottom: '10px' }}>
-                      <CreditCard size={16} style={{ color: '#2563EB' }} />
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', fontWeight: 800, color: 'var(--navy-900)', marginBottom: '10px' }}>
+                      <CreditCard size={15} style={{ color: '#2563EB' }} />
                       Toll Charges (TNG)
                     </label>
                     <div style={{ position: 'relative' }}>
@@ -927,10 +955,10 @@ export default function ExpensesReport() {
                         style={{
                           width: '100%',
                           height: '42px',
-                          padding: '0 12px 0 42px',
+                          padding: '0 10px 0 40px',
                           borderRadius: '10px',
                           border: '1px solid #CBD5E1',
-                          fontSize: '0.96rem',
+                          fontSize: '0.94rem',
                           fontWeight: 800,
                           color: 'var(--navy-900)',
                           background: '#FFFFFF',
@@ -940,18 +968,18 @@ export default function ExpensesReport() {
                       />
                     </div>
                   </div>
-                  <div style={{ fontSize: '0.72rem', color: 'var(--slate)', marginTop: '8px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <div style={{ fontSize: '0.7rem', color: 'var(--slate)', marginTop: '8px', display: 'flex', alignItems: 'center', gap: '4px' }}>
                     <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#2563EB' }}></span>
-                    <span>Touch &apos;n Go / RFID toll</span>
+                    <span>Touch &apos;n Go / RFID</span>
                   </div>
                 </div>
 
-                {/* 4. Loading & Unloading Charges */}
-                <div style={{ background: '#F8FAFC', padding: '16px', borderRadius: '16px', border: '1px solid #E2E8F0', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: '142px' }}>
+                {/* 4. Loading Charges */}
+                <div style={{ background: '#F8FAFC', padding: '14px', borderRadius: '16px', border: '1px solid #E2E8F0', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: '142px' }}>
                   <div>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.82rem', fontWeight: 800, color: 'var(--navy-900)', marginBottom: '10px' }}>
-                      <PackageCheck size={16} style={{ color: '#7C3AED' }} />
-                      Loading &amp; Unloading
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', fontWeight: 800, color: 'var(--navy-900)', marginBottom: '10px' }}>
+                      <PackagePlus size={15} style={{ color: '#7C3AED' }} />
+                      Loading Charges
                     </label>
                     <div style={{ position: 'relative' }}>
                       <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', fontWeight: 800, color: 'var(--slate)', fontSize: '0.86rem' }}>RM</span>
@@ -960,15 +988,15 @@ export default function ExpensesReport() {
                         step="0.01"
                         min="0"
                         placeholder="0.00"
-                        value={expenseForm.loading_unloading_charges}
-                        onChange={(e) => setExpenseForm({ ...expenseForm, loading_unloading_charges: e.target.value })}
+                        value={expenseForm.loading_charges}
+                        onChange={(e) => setExpenseForm({ ...expenseForm, loading_charges: e.target.value })}
                         style={{
                           width: '100%',
                           height: '42px',
-                          padding: '0 12px 0 42px',
+                          padding: '0 10px 0 40px',
                           borderRadius: '10px',
                           border: '1px solid #CBD5E1',
-                          fontSize: '0.96rem',
+                          fontSize: '0.94rem',
                           fontWeight: 800,
                           color: 'var(--navy-900)',
                           background: '#FFFFFF',
@@ -978,9 +1006,47 @@ export default function ExpensesReport() {
                       />
                     </div>
                   </div>
-                  <div style={{ fontSize: '0.72rem', color: 'var(--slate)', marginTop: '8px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <div style={{ fontSize: '0.7rem', color: 'var(--slate)', marginTop: '8px', display: 'flex', alignItems: 'center', gap: '4px' }}>
                     <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#7C3AED' }}></span>
-                    <span>Handling &amp; labour costs</span>
+                    <span>Pickup / handling cost</span>
+                  </div>
+                </div>
+
+                {/* 5. Unloading Charges */}
+                <div style={{ background: '#F8FAFC', padding: '14px', borderRadius: '16px', border: '1px solid #E2E8F0', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: '142px' }}>
+                  <div>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', fontWeight: 800, color: 'var(--navy-900)', marginBottom: '10px' }}>
+                      <PackageCheck size={15} style={{ color: '#6366F1' }} />
+                      Unloading Charges
+                    </label>
+                    <div style={{ position: 'relative' }}>
+                      <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', fontWeight: 800, color: 'var(--slate)', fontSize: '0.86rem' }}>RM</span>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        placeholder="0.00"
+                        value={expenseForm.unloading_charges}
+                        onChange={(e) => setExpenseForm({ ...expenseForm, unloading_charges: e.target.value })}
+                        style={{
+                          width: '100%',
+                          height: '42px',
+                          padding: '0 10px 0 40px',
+                          borderRadius: '10px',
+                          border: '1px solid #CBD5E1',
+                          fontSize: '0.94rem',
+                          fontWeight: 800,
+                          color: 'var(--navy-900)',
+                          background: '#FFFFFF',
+                          outline: 'none',
+                          boxShadow: '0 1px 2px rgba(0,0,0,0.03)'
+                        }}
+                      />
+                    </div>
+                  </div>
+                  <div style={{ fontSize: '0.7rem', color: 'var(--slate)', marginTop: '8px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#6366F1' }}></span>
+                    <span>Dropoff / labour cost</span>
                   </div>
                 </div>
               </div>
@@ -1227,6 +1293,8 @@ export default function ExpensesReport() {
       {viewJobModal && (
         <JobDetailModal
           job={viewJobModal}
+          lorries={lorries}
+          drivers={drivers}
           onClose={() => setViewJobModal(null)}
           onEdit={() => {
             const j = viewJobModal;

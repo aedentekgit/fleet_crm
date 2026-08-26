@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { sb, fmtMoney, jobNoFromQuoteNo, deduplicateJobs, subscribeTable, getStorageData } from '../lib/supabase';
 import { useToast } from '../context/ToastContext';
+import Pagination from '../components/common/Pagination';
 import {
   Search,
   X,
@@ -91,7 +92,7 @@ export default function Finalize() {
           let pTime = job.pickup_time || '';
           let dTime = job.dropoff_time || '';
 
-          let resolvedJobNo = job.job_no;
+          let resolvedJobNo = linkedQ?.quote_no || job.job_no;
           if (linkedQ && linkedQ.quote_no) {
             const syncd = jobNoFromQuoteNo(linkedQ.quote_no);
             if (syncd) resolvedJobNo = syncd;
@@ -110,6 +111,7 @@ export default function Finalize() {
           return {
             ...job,
             job_no: resolvedJobNo,
+            quote_no: linkedQ?.quote_no || job.quote_no || resolvedJobNo,
             collection_date: cDate,
             delivery_date: dDate,
             pickup_time: pTime,
@@ -246,6 +248,17 @@ export default function Finalize() {
     });
   }, [jobs, activeFilter, urgentFilter, lorryFilter, searchQuery, lorries]);
 
+  const [page, setPage] = useState(1);
+  const pageSize = 10;
+
+  useEffect(() => {
+    setPage(1);
+  }, [activeFilter, urgentFilter, lorryFilter, searchQuery]);
+
+  const paginatedJobs = useMemo(() => {
+    return filteredJobs.slice((page - 1) * pageSize, page * pageSize);
+  }, [filteredJobs, page, pageSize]);
+
   // Execute Finalize & Dispatch action
   const handleConfirmFinalize = async (jobToFinalize) => {
     if (!jobToFinalize || isSubmittingFinalize) return;
@@ -375,12 +388,6 @@ export default function Finalize() {
 
   const resolveCustomerName = (card) => {
     if (!card) return 'Direct Customer';
-    if (card.job_no === 'Q010/05/25' || card.customer_ref?.includes('Q010/05/25') || card.quotation_id === 'quo-aureumaex-01' || card.customer_id === 'cust-aureumaex') {
-      return 'AUREUMAEX INDUSTRIES (M) SDN BHD';
-    }
-    if (card.job_no === 'REV-3-6' || card.customer_ref?.includes('REV-3-6') || card.customer_ref?.includes('Rev: 3 6') || card.quotation_id === 'quo-tokopak-01' || card.customer_id === 'cust-tokopak') {
-      return 'TOKOPAK SDN. BHD.';
-    }
     return card.customer?.company_name ||
            card.customer_name ||
            (card.pickup_location && !card.pickup_location.toLowerCase().startsWith('pt ') && !card.pickup_location.toLowerCase().startsWith('no') ? card.pickup_location.split(',')[0].trim() : null) ||
@@ -560,7 +567,7 @@ export default function Finalize() {
             <table className="grid" style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
               <thead>
                 <tr>
-                  <th style={{ width: '11%', padding: '10px 6px', textAlign: 'left', verticalAlign: 'middle', whiteSpace: 'nowrap', fontSize: '0.72rem' }}>Job # &amp; Date</th>
+                  <th style={{ width: '11%', padding: '10px 6px', textAlign: 'left', verticalAlign: 'middle', whiteSpace: 'nowrap', fontSize: '0.72rem' }}>Order / Job # &amp; Date</th>
                   <th style={{ width: '13%', padding: '10px 6px', textAlign: 'left', verticalAlign: 'middle', whiteSpace: 'nowrap', fontSize: '0.72rem' }}>Customer</th>
                   <th style={{ width: '11%', padding: '10px 6px', textAlign: 'left', verticalAlign: 'middle', whiteSpace: 'nowrap', fontSize: '0.72rem' }}>Route</th>
                   <th style={{ width: '11%', padding: '10px 6px', textAlign: 'left', verticalAlign: 'middle', whiteSpace: 'nowrap', fontSize: '0.72rem' }}>Cargo / Specs</th>
@@ -572,7 +579,7 @@ export default function Finalize() {
               </thead>
               <tbody>
                 {filteredJobs.length > 0 ? (
-                  filteredJobs.map(card => {
+                  paginatedJobs.map(card => {
                     const crew = (card.job_crew || []).sort((a, b) => a.role === 'driver' ? -1 : 1);
                     const lorry = lorries.find(l => l.id === card.lorry_id);
                     const pickup = card.pickup_location || card.origin || 'Port Klang';
@@ -649,7 +656,7 @@ export default function Finalize() {
                         {/* Job # & Date */}
                         <td style={{ verticalAlign: 'middle', padding: '8px 6px', textAlign: 'left', whiteSpace: 'nowrap' }}>
                           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '2px' }}>
-                            <span className="jno-pill" style={{ fontSize: '0.72rem', padding: '1px 4px' }}>{card.job_no}</span>
+                            <span className="jno-pill" style={{ fontSize: '0.72rem', padding: '1px 4px' }}>{card.quote_no || card.job_no}</span>
                             {Boolean(card.urgent) && (
                               <span className="badge urgent" style={{ fontSize: '0.54rem', padding: '1px 3px', width: 'fit-content', display: 'inline-flex', alignItems: 'center', gap: '2px' }}>
                                 <AlertTriangle size={8} strokeWidth={2.5} />
@@ -818,6 +825,13 @@ export default function Finalize() {
                 )}
               </tbody>
             </table>
+            <Pagination
+              currentPage={page}
+              totalItems={filteredJobs.length}
+              pageSize={pageSize}
+              onPageChange={setPage}
+              itemName="assigned orders"
+            />
           </div>
         </div>
       ) : (
@@ -936,6 +950,16 @@ export default function Finalize() {
               No jobs matching filters.
             </div>
           )}
+          <div style={{ gridColumn: '1 / -1' }}>
+            <Pagination
+              currentPage={page}
+              totalItems={filteredJobs.length}
+              pageSize={pageSize}
+              onPageChange={setPage}
+              itemName="assigned orders"
+              style={{ borderRadius: '14px', border: '1px solid var(--line)' }}
+            />
+          </div>
         </div>
       )}
 

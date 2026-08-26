@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { sb, fmtMoney, fmtDate, esc, withSST, nextQuoteNo, nextJobNo, jobNoFromQuoteNo, subscribeTable, getStorageData, isOrderQuotation, isContractQuotation } from '../lib/supabase';
+import { sb, fmtMoney, fmtDate, esc, withSST, nextQuoteNo, nextOrderNo, nextJobNo, jobNoFromQuoteNo, subscribeTable, getStorageData, isOrderQuotation, isContractQuotation } from '../lib/supabase';
 import { useToast } from '../context/ToastContext';
+import Pagination from '../components/common/Pagination';
 import logoImg from '../assets/WhatsApp Image 2026-07-09 at 2.19.49 PM-Photoroom-BQJKJGof-Bld4xBKC.png';
 import {
   Plus,
@@ -257,6 +258,9 @@ export default function Quotations() {
   const [formUrgent, setFormUrgent] = useState(false);
   const [formRepeatOrder, setFormRepeatOrder] = useState(false);
   const [formRepeatDeliveryMode, setFormRepeatDeliveryMode] = useState('same_day'); // 'same_day' (Today Pickup -> Today Drop) | 'next_day' (Today Pickup -> Tomorrow Drop)
+  const [repeatDailyQuantity, setRepeatDailyQuantity] = useState(1); // Default orders / lorries per day
+  const [repeatDateQuantities, setRepeatDateQuantities] = useState({}); // { [isoDate]: number }
+  const [repeatTripTimings, setRepeatTripTimings] = useState({}); // { [isoDate]: Array<{ pickupTime: string, dropoffTime: string }> }
   const [selectedRepeatDates, setSelectedRepeatDates] = useState([]);
   const [calMonth, setCalMonth] = useState(new Date().getMonth());
   const [calYear, setCalYear] = useState(new Date().getFullYear());
@@ -738,33 +742,18 @@ export default function Quotations() {
       }
     }
 
-    const now = new Date();
-    const qPrefix = `RJ-Q-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}-`;
-    const jPrefix = `RJ-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}-`;
-
     const localQuotes = (getStorageData ? getStorageData('quotations') : quotes) || [];
-    let maxQSeq = 0;
-    localQuotes.forEach(q => {
-      if (q.quote_no && q.quote_no.startsWith(qPrefix)) {
-        const num = parseInt(q.quote_no.split('-').pop(), 10);
-        if (!isNaN(num) && num > maxQSeq) maxQSeq = num;
+    let maxOrderSeq = 0;
+    const checkOrderNo = (val) => {
+      if (!val) return;
+      const m = String(val).trim().match(/^rensorder(\d+)/i);
+      if (m && m[1]) {
+        const num = parseInt(m[1], 10);
+        if (!isNaN(num) && num > maxOrderSeq) maxOrderSeq = num;
       }
-    });
-    quotes.forEach(q => {
-      if (q.quote_no && q.quote_no.startsWith(qPrefix)) {
-        const num = parseInt(q.quote_no.split('-').pop(), 10);
-        if (!isNaN(num) && num > maxQSeq) maxQSeq = num;
-      }
-    });
-
-    const localJobs = (getStorageData ? getStorageData('jobs') : []) || [];
-    let maxJSeq = 0;
-    localJobs.forEach(j => {
-      if (j.job_no && j.job_no.startsWith(jPrefix)) {
-        const num = parseInt(j.job_no.split('-').pop(), 10);
-        if (!isNaN(num) && num > maxJSeq) maxJSeq = num;
-      }
-    });
+    };
+    localQuotes.forEach(q => checkOrderNo(q.quote_no));
+    quotes.forEach(q => checkOrderNo(q.quote_no));
 
     const finalStatus = targetStatus === 'draft' ? 'draft' : (isExistingCustomer ? 'approved' : 'client_confirmed');
     const quotesToInsert = [];
@@ -775,10 +764,9 @@ export default function Quotations() {
     const baseArrivedDate = formArrivedDate.trim() || baseOrderDate;
 
     routesToProcess.forEach((route, idx) => {
-      const seqQ = maxQSeq + 1 + idx;
-      const seqJ = maxJSeq + 1 + idx;
-      const quoteNo = `${qPrefix}${String(seqQ).padStart(4, '0')}`;
-      const jobNo = `${jPrefix}${String(seqJ).padStart(4, '0')}`;
+      const seqOrder = maxOrderSeq + 1 + idx;
+      const quoteNo = `rensorder${String(seqOrder).padStart(2, '0')}`;
+      const jobNo = quoteNo;
       const quoteId = 'q_' + Date.now() + '_' + idx + '_' + Math.random().toString(36).substr(2, 5);
 
       const rSpec = (route.lorryTypes && route.lorryTypes.find(t => t.includes('30ft'))) || (route.lorryTypes && route.lorryTypes[0]) || formSpec || '30ft SIDE CURTAIN';
@@ -951,6 +939,10 @@ export default function Quotations() {
     setFormRate('');
     setFormUrgent(false);
     setFormRepeatOrder(false);
+    setFormRepeatDeliveryMode('same_day');
+    setRepeatDailyQuantity(1);
+    setRepeatDateQuantities({});
+    setRepeatTripTimings({});
     setSelectedRepeatDates([]);
     setCustomDateInput('');
     setSelectedRouteIds([]);
@@ -1364,50 +1356,35 @@ export default function Quotations() {
             await sb.from('customers').update(patch).eq('id', existCust.id);
           }
         }
-      } catch (e) {}
+    } catch (e) {}
     }
 
     const finalStatus = targetStatus === 'draft' ? 'draft' : (isExistingCustomer ? 'approved' : 'client_confirmed');
 
-    // ── CASE 1: REPEAT ORDER FOR MULTIPLE SELECTED DATES ─────────────────────
+    // ── CASE 1: REPEAT ORDER FOR MULTIPLE SELECTED DATES OR MULTIPLE TRIPS/DAY ──
     if (formRepeatOrder && selectedRepeatDates.length > 0) {
       const sortedDates = Array.from(new Set(selectedRepeatDates)).sort();
-      const now = new Date();
-      const qPrefix = `RJ-Q-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}-`;
-      const jPrefix = `RJ-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}-`;
-
-      // Read current max sequence from local data and state
       const localQuotes = (getStorageData ? getStorageData('quotations') : quotes) || [];
-      let maxQSeq = 0;
-      localQuotes.forEach(q => {
-        if (q.quote_no && q.quote_no.startsWith(qPrefix)) {
-          const num = parseInt(q.quote_no.split('-').pop(), 10);
-          if (!isNaN(num) && num > maxQSeq) maxQSeq = num;
+      let maxOrderSeq = 0;
+      const checkOrderNo = (val) => {
+        if (!val) return;
+        const m = String(val).trim().match(/^rensorder(\d+)/i);
+        if (m && m[1]) {
+          const num = parseInt(m[1], 10);
+          if (!isNaN(num) && num > maxOrderSeq) maxOrderSeq = num;
         }
-      });
-      quotes.forEach(q => {
-        if (q.quote_no && q.quote_no.startsWith(qPrefix)) {
-          const num = parseInt(q.quote_no.split('-').pop(), 10);
-          if (!isNaN(num) && num > maxQSeq) maxQSeq = num;
-        }
-      });
-
-      const localJobs = (getStorageData ? getStorageData('jobs') : []) || [];
-      let maxJSeq = 0;
-      localJobs.forEach(j => {
-        if (j.job_no && j.job_no.startsWith(jPrefix)) {
-          const num = parseInt(j.job_no.split('-').pop(), 10);
-          if (!isNaN(num) && num > maxJSeq) maxJSeq = num;
-        }
-      });
+      };
+      localQuotes.forEach(q => checkOrderNo(q.quote_no));
+      quotes.forEach(q => checkOrderNo(q.quote_no));
 
       const quotesToInsert = [];
       const jobsToInsert = [];
-      const approvalsToInsert = [];
+      let orderIndex = 0;
 
       for (let i = 0; i < sortedDates.length; i++) {
         const isoDate = sortedDates[i];
         const pickupDmy = formatISOToDMY(isoDate);
+        const dailyCount = Math.max(1, parseInt(repeatDateQuantities[isoDate], 10) || 1);
 
         let dropoffDmy = pickupDmy;
         if (formRepeatDeliveryMode === 'next_day') {
@@ -1418,69 +1395,96 @@ export default function Quotations() {
         }
 
         const deliveryTimingText = formRepeatDeliveryMode === 'next_day' ? 'Today Pickup ➔ Tomorrow Drop' : 'Today Pickup ➔ Today Drop';
-        const seqQ = maxQSeq + 1 + i;
-        const seqJ = maxJSeq + 1 + i;
-        const quoteNo = `${qPrefix}${String(seqQ).padStart(4, '0')}`;
-        const jobNo = `${jPrefix}${String(seqJ).padStart(4, '0')}`;
-        const quoteId = 'q_' + Date.now() + '_' + i + '_' + Math.random().toString(36).substr(2, 5);
 
-        const quoteRow = {
-          id: quoteId,
-          quote_no: quoteNo,
-          customer_id: resolvedCustomerId,
-          customer_ref: formRef.trim(),
-          zone: (formPickupZone.trim() || formDropoffZone.trim() || formZone.trim()),
-          pickup_zone: formPickupZone.trim(),
-          dropoff_zone: formDropoffZone.trim(),
-          pickup_location: formPickup.trim(),
-          dropoff_location: formDropoff.trim(),
-          collection_date: pickupDmy,
-          delivery_date: dropoffDmy,
-          arrived_date: dropoffDmy,
-          pickup_time: formPickupTime.trim(),
-          dropoff_time: formDropoffTime.trim(),
-          lorry_spec: formSpec.trim(),
-          weight_desc: formWeight.trim(),
-          special_instructions: (formSpecial.trim() ? formSpecial.trim() + ' | ' : '') + `Repeat Order (Day ${i + 1}/${sortedDates.length}) • ${deliveryTimingText}`,
-          rate_amount: rateVal,
-          urgent: formUrgent ? 1 : 0,
-          raw_message: rawText,
-          status: finalStatus,
-          client_confirmed_at: new Date().toISOString(),
-          owner_approved_at: (isExistingCustomer && finalStatus !== 'draft') ? new Date().toISOString() : null,
-          phone: formPhone.trim(),
-          contact_person: formAttn.trim(),
-          payment_terms: formTerms.trim() || '30 days credit',
-          created_at: new Date(Date.now() + i * 50).toISOString()
-        };
-        if (finalStatus === 'sent') quoteRow.sent_at = new Date().toISOString();
+        for (let k = 0; k < dailyCount; k++) {
+          const tripTiming = (repeatTripTimings[isoDate] && repeatTripTimings[isoDate][k]) || {};
+          const defaultPickup = k === 0 ? '08:00 AM' : (k === 1 ? '01:30 PM' : (k === 2 ? '05:00 PM' : '08:00 AM'));
+          const defaultDropoff = formRepeatDeliveryMode === 'next_day'
+            ? '10:00 AM'
+            : (k === 0 ? '12:00 PM' : (k === 1 ? '05:30 PM' : (k === 2 ? '09:00 PM' : '05:00 PM')));
 
-        quotesToInsert.push(quoteRow);
+          const tripPickupTime = (tripTiming.pickupTime !== undefined && tripTiming.pickupTime !== '')
+            ? tripTiming.pickupTime.trim()
+            : (formPickupTime.trim() || defaultPickup);
 
-        if (isExistingCustomer && finalStatus !== 'draft') {
-          jobsToInsert.push({
-            id: 'job_' + Date.now() + '_' + i + '_' + Math.random().toString(36).substr(2, 5),
-            job_no: jobNo,
-            quotation_id: quoteId,
+          const tripDropoffTime = (tripTiming.dropoffTime !== undefined && tripTiming.dropoffTime !== '')
+            ? tripTiming.dropoffTime.trim()
+            : (formDropoffTime.trim() || defaultDropoff);
+
+          const seqOrder = maxOrderSeq + 1 + orderIndex;
+          const quoteNo = `rensorder${String(seqOrder).padStart(2, '0')}`;
+          const jobNo = quoteNo;
+          const quoteId = 'q_' + Date.now() + '_' + orderIndex + '_' + Math.random().toString(36).substr(2, 5);
+
+          const timeNote = ` • Loading: ${tripPickupTime} • Unloading: ${tripDropoffTime}`;
+          const tripLabel = dailyCount > 1
+            ? `Repeat Order (Day ${i + 1}/${sortedDates.length} • Trip ${k + 1}/${dailyCount}) • ${deliveryTimingText}${timeNote}`
+            : (sortedDates.length > 1 ? `Repeat Order (Day ${i + 1}/${sortedDates.length}) • ${deliveryTimingText}${timeNote}` : `Repeat Order • ${deliveryTimingText}${timeNote}`);
+
+          const quoteRow = {
+            id: quoteId,
+            quote_no: quoteNo,
             customer_id: resolvedCustomerId,
-            customer_ref: formRef.trim() || ('Quotation ' + quoteNo),
-            rate_amount: rateVal || 0,
-            pickup_location: formPickup.trim() || 'Pickup Location',
-            dropoff_location: formDropoff.trim() || 'Dropoff Location',
+            customer_ref: formRef.trim(),
+            zone: (formPickupZone.trim() || formDropoffZone.trim() || formZone.trim()),
             pickup_zone: formPickupZone.trim(),
             dropoff_zone: formDropoffZone.trim(),
-            cargo_desc: formWeight.trim() || formSpec.trim() || 'General Cargo',
-            lorry_spec: formSpec.trim(),
-            weight_desc: formWeight.trim(),
-            urgent: formUrgent ? 1 : 0,
-            special_instructions: quoteRow.special_instructions,
+            pickup_location: formPickup.trim(),
+            dropoff_location: formDropoff.trim(),
             collection_date: pickupDmy,
             delivery_date: dropoffDmy,
-            status: 'unassigned',
-            is_approved: 0,
-            billed_status: 'pending',
-            created_at: new Date(Date.now() + i * 50).toISOString()
-          });
+            arrived_date: dropoffDmy,
+            pickup_time: tripPickupTime,
+            dropoff_time: tripDropoffTime,
+            lorry_spec: formSpec.trim(),
+            weight_desc: formWeight.trim(),
+            special_instructions: (formSpecial.trim() ? formSpecial.trim() + ' | ' : '') + tripLabel,
+            rate_amount: rateVal,
+            urgent: formUrgent ? 1 : 0,
+            raw_message: rawText,
+            status: finalStatus,
+            client_confirmed_at: new Date().toISOString(),
+            owner_approved_at: (isExistingCustomer && finalStatus !== 'draft') ? new Date().toISOString() : null,
+            phone: formPhone.trim(),
+            contact_person: formAttn.trim(),
+            payment_terms: formTerms.trim() || '30 days credit',
+            created_at: new Date(Date.now() + orderIndex * 50).toISOString()
+          };
+          if (finalStatus === 'sent') quoteRow.sent_at = new Date().toISOString();
+
+          quotesToInsert.push(quoteRow);
+
+          if (isExistingCustomer && finalStatus !== 'draft') {
+            jobsToInsert.push({
+              id: 'job_' + Date.now() + '_' + orderIndex + '_' + Math.random().toString(36).substr(2, 5),
+              job_no: jobNo,
+              quotation_id: quoteId,
+              customer_id: resolvedCustomerId,
+              customer_ref: formRef.trim() || ('Quotation ' + quoteNo),
+              rate_amount: rateVal || 0,
+              pickup_location: formPickup.trim() || 'Pickup Location',
+              dropoff_location: formDropoff.trim() || 'Dropoff Location',
+              pickup_zone: formPickupZone.trim(),
+              dropoff_zone: formDropoffZone.trim(),
+              zone: (formPickupZone.trim() || formDropoffZone.trim() || formZone.trim()),
+              pickup_time: tripPickupTime,
+              dropoff_time: tripDropoffTime,
+              loading_time: tripPickupTime,
+              cargo_desc: formWeight.trim() || formSpec.trim() || 'General Cargo',
+              lorry_spec: formSpec.trim(),
+              weight_desc: formWeight.trim(),
+              urgent: formUrgent ? 1 : 0,
+              special_instructions: quoteRow.special_instructions,
+              collection_date: pickupDmy,
+              delivery_date: dropoffDmy,
+              status: 'unassigned',
+              is_approved: 0,
+              billed_status: 'pending',
+              created_at: new Date(Date.now() + orderIndex * 50).toISOString()
+            });
+          }
+
+          orderIndex++;
         }
       }
 
@@ -1493,11 +1497,15 @@ export default function Quotations() {
         }
       }
 
-      toast(`Successfully created exactly ${sortedDates.length} orders for the selected dates!`, 'ok');
+      const totalCount = quotesToInsert.length;
+      toast(`Successfully created ${totalCount} ${totalCount === 1 ? 'order' : 'orders / lorries'} across ${sortedDates.length} ${sortedDates.length === 1 ? 'day' : 'days'}!`, 'ok');
       setShowNewPanel(false);
       setEditingId(null);
       setFormRepeatOrder(false);
       setSelectedRepeatDates([]);
+      setRepeatDateQuantities({});
+      setRepeatTripTimings({});
+      setRepeatDailyQuantity(1);
       loadData();
       return;
     }
@@ -1535,7 +1543,7 @@ export default function Quotations() {
     if (editingId) {
       if (sb) await sb.from('quotations').update(payload).eq('id', editingId);
     } else {
-      payload.quote_no = await nextQuoteNo();
+      payload.quote_no = await nextOrderNo();
       payload.created_at = new Date().toISOString();
       if (sb) {
         try {
@@ -1823,7 +1831,20 @@ export default function Quotations() {
       if (job.id && quoteKeySet.has(String(job.id))) return false;
       return true;
     }).map(job => {
-      const qNo = job.job_no ? (job.job_no.startsWith('RJ-Q-') ? job.job_no : job.job_no.replace('RJ-', 'RJ-Q-')) : ('RJ-Q-' + String(job.id).slice(-4));
+      let qNo = job.quote_no;
+      if (!qNo && job.job_no) {
+        if (job.job_no.startsWith('RJ-ORDER-')) {
+          const num = parseInt(job.job_no.replace('RJ-ORDER-', ''), 10);
+          qNo = `rensorder${String(isNaN(num) ? 1 : num).padStart(2, '0')}`;
+        } else if (job.job_no.startsWith('RJ-Q-')) {
+          qNo = job.job_no;
+        } else {
+          qNo = job.job_no.replace('RJ-', 'RJ-Q-');
+        }
+      }
+      if (!qNo) {
+        qNo = 'rensorder' + String(job.id || '01').slice(-2);
+      }
       return {
         id: job.quotation_id || job.id,
         quote_no: qNo,
@@ -1883,6 +1904,17 @@ export default function Quotations() {
     }
     return tripOrders.filter(x => x.effectiveStatus === activeFilter);
   }, [activeFilter, tripOrders]);
+
+  const [page, setPage] = useState(1);
+  const pageSize = 10;
+
+  useEffect(() => {
+    setPage(1);
+  }, [activeFilter]);
+
+  const paginatedQuotes = useMemo(() => {
+    return filteredQuotes.slice((page - 1) * pageSize, page * pageSize);
+  }, [filteredQuotes, page, pageSize]);
 
   const badgeClass = s => ({ draft: 'grey', sent: 'blue', client_confirmed: 'amber', approved: 'green', assigned: 'grey', in_transit: 'blue', delivered: 'green', declined: 'red' }[s] || 'amber');
 
@@ -2912,6 +2944,9 @@ export default function Quotations() {
                           setCalYear(today.getFullYear());
                           setCalMonth(today.getMonth());
                           setSelectedRepeatDates([]);
+                          setRepeatDateQuantities({});
+                          setRepeatTripTimings({});
+                          setRepeatDailyQuantity(1);
                         }
                       }}
                       style={{ width: '13px', height: '13px', accentColor: 'var(--orange)', cursor: 'pointer', margin: 0 }}
@@ -2968,6 +3003,18 @@ export default function Quotations() {
               const firstDayIndex = new Date(calYear, calMonth, 1).getDay();
               const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
 
+              const repeatTimeSlots = [
+                '06:00 AM', '06:30 AM', '07:00 AM', '07:30 AM',
+                '08:00 AM', '08:30 AM', '09:00 AM', '09:30 AM',
+                '10:00 AM', '10:30 AM', '11:00 AM', '11:30 AM',
+                '12:00 PM', '12:30 PM', '01:00 PM', '01:30 PM',
+                '02:00 PM', '02:30 PM', '03:00 PM', '03:30 PM',
+                '04:00 PM', '04:30 PM', '05:00 PM', '05:30 PM',
+                '06:00 PM', '06:30 PM', '07:00 PM', '07:30 PM',
+                '08:00 PM', '08:30 PM', '09:00 PM', '09:30 PM',
+                '10:00 PM', '11:00 PM', '12:00 AM'
+              ];
+
               const prevMonth = () => {
                 if (calMonth === 0) {
                   setCalMonth(11);
@@ -2988,12 +3035,29 @@ export default function Quotations() {
 
               const toggleDate = (isoStr) => {
                 const exists = selectedRepeatDates.includes(isoStr);
-                const updated = exists
-                  ? selectedRepeatDates.filter(d => d !== isoStr)
-                  : [...selectedRepeatDates, isoStr];
-                updated.sort();
-                setSelectedRepeatDates(updated);
-                if (updated.length > 0) {
+                if (exists) {
+                  const updated = selectedRepeatDates.filter(d => d !== isoStr);
+                  setSelectedRepeatDates(updated);
+                  setRepeatDateQuantities(prev => {
+                    const next = { ...prev };
+                    delete next[isoStr];
+                    return next;
+                  });
+                  setRepeatTripTimings(prev => {
+                    const next = { ...prev };
+                    delete next[isoStr];
+                    return next;
+                  });
+                  if (updated.length > 0) {
+                    setFormOrderDate(formatISOToDMY(updated[0]));
+                  }
+                } else {
+                  const updated = [...selectedRepeatDates, isoStr].sort();
+                  setSelectedRepeatDates(updated);
+                  setRepeatDateQuantities(prev => ({
+                    ...prev,
+                    [isoStr]: prev[isoStr] || repeatDailyQuantity || 1
+                  }));
                   setFormOrderDate(formatISOToDMY(updated[0]));
                 }
               };
@@ -3012,6 +3076,13 @@ export default function Quotations() {
                 }
                 const cleanDates = Array.from(new Set(newDates)).sort();
                 setSelectedRepeatDates(cleanDates);
+                setRepeatDateQuantities(prev => {
+                  const next = { ...prev };
+                  cleanDates.forEach(dt => {
+                    next[dt] = next[dt] || repeatDailyQuantity || 1;
+                  });
+                  return next;
+                });
                 if (cleanDates.length > 0) {
                   const firstDmy = formatISOToDMY(cleanDates[0]);
                   setFormOrderDate(firstDmy);
@@ -3024,6 +3095,10 @@ export default function Quotations() {
                 if (!selectedRepeatDates.includes(customDateInput)) {
                   const updated = Array.from(new Set([...selectedRepeatDates, customDateInput])).sort();
                   setSelectedRepeatDates(updated);
+                  setRepeatDateQuantities(prev => ({
+                    ...prev,
+                    [customDateInput]: prev[customDateInput] || repeatDailyQuantity || 1
+                  }));
                   if (updated.length > 0) {
                     const firstDmy = formatISOToDMY(updated[0]);
                     setFormOrderDate(firstDmy);
@@ -3032,6 +3107,11 @@ export default function Quotations() {
                 }
                 setCustomDateInput('');
               };
+
+              const totalOrdersCount = selectedRepeatDates.reduce(
+                (sum, iso) => sum + (Math.max(1, parseInt(repeatDateQuantities[iso], 10) || 1)),
+                0
+              );
 
               return (
                 <div
@@ -3051,7 +3131,7 @@ export default function Quotations() {
                       <CalendarDays size={16} color="#EA580C" strokeWidth={2.4} />
                       <span>Manual Calendar Date Selection</span>
                       <span style={{ fontSize: '0.74rem', background: '#FFEDD5', color: '#C2410C', padding: '2px 8px', borderRadius: '12px', fontWeight: 800 }}>
-                        {selectedRepeatDates.length} {selectedRepeatDates.length === 1 ? 'Date Selected' : 'Dates Selected (Daily Repeat)'}
+                        {selectedRepeatDates.length} {selectedRepeatDates.length === 1 ? 'Date' : 'Dates'} Selected • {totalOrdersCount} Total {totalOrdersCount === 1 ? 'Order' : 'Orders / Lorries'}
                       </span>
                     </div>
 
@@ -3088,7 +3168,11 @@ export default function Quotations() {
                         <button
                           type="button"
                           className="btn gh sm"
-                          onClick={() => setSelectedRepeatDates([])}
+                          onClick={() => {
+                            setSelectedRepeatDates([]);
+                            setRepeatDateQuantities({});
+                            setRepeatTripTimings({});
+                          }}
                           style={{ fontSize: '0.72rem', height: '26px', padding: '2px 8px', color: '#EF4444', borderColor: 'rgba(239,68,68,0.3)', background: '#FFF' }}
                         >
                           Clear
@@ -3097,34 +3181,78 @@ export default function Quotations() {
                     </div>
                   </div>
 
-                  {/* Delivery Schedule Mode (Today Pickup & Today Drop vs Today Pickup & Tomorrow Drop) */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px', padding: '8px 12px', background: '#FFFFFF', borderRadius: '8px', border: '1px solid #FED7AA', flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: '0.74rem', fontWeight: 800, color: '#9A3412', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                      <Clock size={13} color="#EA580C" /> Delivery Timing:
-                    </span>
-                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.74rem', fontWeight: 700, cursor: 'pointer', color: formRepeatDeliveryMode === 'same_day' ? '#C2410C' : '#64748B', background: formRepeatDeliveryMode === 'same_day' ? '#FFF7ED' : '#F8FAFC', border: `1.5px solid ${formRepeatDeliveryMode === 'same_day' ? '#EA580C' : '#E2E8F0'}`, padding: '4px 10px', borderRadius: '6px', transition: 'all 0.12s ease' }}>
-                        <input
-                          type="radio"
-                          name="repeatDeliveryMode"
-                          value="same_day"
-                          checked={formRepeatDeliveryMode === 'same_day'}
-                          onChange={() => setFormRepeatDeliveryMode('same_day')}
-                          style={{ accentColor: 'var(--orange)', cursor: 'pointer' }}
-                        />
-                        <span>📦 Today Pickup &amp; Today Drop (Same Day)</span>
-                      </label>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.74rem', fontWeight: 700, cursor: 'pointer', color: formRepeatDeliveryMode === 'next_day' ? '#C2410C' : '#64748B', background: formRepeatDeliveryMode === 'next_day' ? '#FFF7ED' : '#F8FAFC', border: `1.5px solid ${formRepeatDeliveryMode === 'next_day' ? '#EA580C' : '#E2E8F0'}`, padding: '4px 10px', borderRadius: '6px', transition: 'all 0.12s ease' }}>
-                        <input
-                          type="radio"
-                          name="repeatDeliveryMode"
-                          value="next_day"
-                          checked={formRepeatDeliveryMode === 'next_day'}
-                          onChange={() => setFormRepeatDeliveryMode('next_day')}
-                          style={{ accentColor: 'var(--orange)', cursor: 'pointer' }}
-                        />
-                        <span>🚚 Today Pickup &amp; Tomorrow Drop (Next Day / +1 Day)</span>
-                      </label>
+                  {/* Delivery Schedule Mode & Orders Per Day Control */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', marginBottom: '14px', padding: '8px 12px', background: '#FFFFFF', borderRadius: '8px', border: '1px solid #FED7AA', flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: '0.74rem', fontWeight: 800, color: '#9A3412', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                        <Clock size={13} color="#EA580C" /> Delivery Timing:
+                      </span>
+                      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.74rem', fontWeight: 700, cursor: 'pointer', color: formRepeatDeliveryMode === 'same_day' ? '#C2410C' : '#64748B', background: formRepeatDeliveryMode === 'same_day' ? '#FFF7ED' : '#F8FAFC', border: `1.5px solid ${formRepeatDeliveryMode === 'same_day' ? '#EA580C' : '#E2E8F0'}`, padding: '4px 10px', borderRadius: '6px', transition: 'all 0.12s ease' }}>
+                          <input
+                            type="radio"
+                            name="repeatDeliveryMode"
+                            value="same_day"
+                            checked={formRepeatDeliveryMode === 'same_day'}
+                            onChange={() => setFormRepeatDeliveryMode('same_day')}
+                            style={{ accentColor: 'var(--orange)', cursor: 'pointer' }}
+                          />
+                          <span>📦 Today Pickup &amp; Today Drop (Same Day)</span>
+                        </label>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.74rem', fontWeight: 700, cursor: 'pointer', color: formRepeatDeliveryMode === 'next_day' ? '#C2410C' : '#64748B', background: formRepeatDeliveryMode === 'next_day' ? '#FFF7ED' : '#F8FAFC', border: `1.5px solid ${formRepeatDeliveryMode === 'next_day' ? '#EA580C' : '#E2E8F0'}`, padding: '4px 10px', borderRadius: '6px', transition: 'all 0.12s ease' }}>
+                          <input
+                            type="radio"
+                            name="repeatDeliveryMode"
+                            value="next_day"
+                            checked={formRepeatDeliveryMode === 'next_day'}
+                            onChange={() => setFormRepeatDeliveryMode('next_day')}
+                            style={{ accentColor: 'var(--orange)', cursor: 'pointer' }}
+                          />
+                          <span>🚚 Today Pickup &amp; Tomorrow Drop (Next Day / +1 Day)</span>
+                        </label>
+                      </div>
+                    </div>
+
+                    {/* Orders / Lorries Per Day default stepper */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#FFF7ED', padding: '3px 8px', borderRadius: '6px', border: '1px solid #FDBA74' }}>
+                      <span style={{ fontSize: '0.74rem', fontWeight: 800, color: '#9A3412', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <Truck size={13} color="#EA580C" /> Lorries/Day:
+                      </span>
+                      <div style={{ display: 'inline-flex', alignItems: 'center', border: '1px solid #FDBA74', borderRadius: '5px', overflow: 'hidden', background: '#FFF' }}>
+                        <button
+                          type="button"
+                          onClick={() => setRepeatDailyQuantity(prev => Math.max(1, prev - 1))}
+                          style={{ width: '22px', height: '22px', border: 'none', background: '#FEE2E2', color: '#991B1B', fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                        >
+                          -
+                        </button>
+                        <span style={{ minWidth: '24px', textAlign: 'center', fontSize: '0.76rem', fontWeight: 800, color: '#9A3412' }}>
+                          {repeatDailyQuantity}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setRepeatDailyQuantity(prev => Math.min(50, prev + 1))}
+                          style={{ width: '22px', height: '22px', border: 'none', background: '#DCFCE7', color: '#166534', fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                        >
+                          +
+                        </button>
+                      </div>
+                      {selectedRepeatDates.length > 0 && (
+                        <button
+                          type="button"
+                          className="btn gh sm"
+                          onClick={() => {
+                            const updated = {};
+                            selectedRepeatDates.forEach(d => { updated[d] = repeatDailyQuantity; });
+                            setRepeatDateQuantities(updated);
+                            toast(`Set all ${selectedRepeatDates.length} dates to ${repeatDailyQuantity} ${repeatDailyQuantity === 1 ? 'order' : 'orders'}!`, 'info');
+                          }}
+                          style={{ fontSize: '0.68rem', height: '22px', padding: '1px 6px', borderColor: '#FDBA74', color: '#9A3412', background: '#FFF', fontWeight: 700 }}
+                          title="Apply this quantity to all selected dates"
+                        >
+                          Apply to all
+                        </button>
+                      )}
                     </div>
                   </div>
 
@@ -3175,6 +3303,7 @@ export default function Quotations() {
                           const isSelected = selectedRepeatDates.includes(isoStr);
                           const dayOfWeek = new Date(calYear, calMonth, dayNum).getDay();
                           const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+                          const dateQty = isSelected ? (Math.max(1, parseInt(repeatDateQuantities[isoStr], 10) || 1)) : 0;
 
                           return (
                             <button
@@ -3194,11 +3323,32 @@ export default function Quotations() {
                                 color: isSelected ? '#FFFFFF' : (isWeekend ? '#BE123C' : '#1E293B'),
                                 cursor: 'pointer',
                                 transition: 'all 0.12s ease',
-                                padding: 0
+                                padding: 0,
+                                position: 'relative'
                               }}
-                              title={isSelected ? `Remove ${dayNum}/${calMonth + 1}/${calYear}` : `Add ${dayNum}/${calMonth + 1}/${calYear}`}
+                              title={isSelected ? `Remove ${dayNum}/${calMonth + 1}/${calYear} (${dateQty} orders)` : `Add ${dayNum}/${calMonth + 1}/${calYear}`}
                             >
                               {dayNum}
+                              {isSelected && dateQty > 1 && (
+                                <span
+                                  style={{
+                                    position: 'absolute',
+                                    top: '-4px',
+                                    right: '-4px',
+                                    background: '#0F172A',
+                                    color: '#FFFFFF',
+                                    fontSize: '0.58rem',
+                                    fontWeight: 900,
+                                    borderRadius: '50px',
+                                    padding: '0px 3.5px',
+                                    lineHeight: '13px',
+                                    border: '1px solid #FFFFFF',
+                                    boxShadow: '0 1px 3px rgba(0,0,0,0.2)'
+                                  }}
+                                >
+                                  ×{dateQty}
+                                </span>
+                              )}
                             </button>
                           );
                         })}
@@ -3227,8 +3377,8 @@ export default function Quotations() {
                     {/* Selected Dates Display list */}
                     <div>
                       <div style={{ fontSize: '0.76rem', fontWeight: 800, color: '#9A3412', marginBottom: '6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span>Selected Repeat Schedule ({selectedRepeatDates.length} Days):</span>
-                        <span style={{ fontSize: '0.7rem', color: '#64748B', fontWeight: 500 }}>Click date pill to remove</span>
+                        <span>Selected Repeat Schedule ({selectedRepeatDates.length} Days • {totalOrdersCount} Orders):</span>
+                        <span style={{ fontSize: '0.7rem', color: '#64748B', fontWeight: 500 }}>Select timing per order</span>
                       </div>
 
                       {selectedRepeatDates.length === 0 ? (
@@ -3236,10 +3386,11 @@ export default function Quotations() {
                           No dates selected yet. Click any date on the calendar on the left to add.
                         </div>
                       ) : (
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', maxHeight: '200px', overflowY: 'auto', padding: '2px' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '250px', overflowY: 'auto', padding: '2px' }}>
                           {selectedRepeatDates.map((iso, idx) => {
                             const pickupDmy = formatISOToDMY(iso);
                             const pickupDayNm = getDayName(iso);
+                            const currentQty = Math.max(1, parseInt(repeatDateQuantities[iso], 10) || 1);
                             
                             // Calculate dropoff date based on selected delivery timing mode
                             let dropDmy = pickupDmy;
@@ -3248,7 +3399,7 @@ export default function Quotations() {
                               const [y, m, d] = iso.split('-').map(Number);
                               const dropDt = new Date(y, m - 1, d);
                               dropDt.setDate(dropDt.getDate() + 1);
-                              dropDmy = `${String(dropDt.getDate()).padStart(2, '0')}/${String(dropDt.getMonth() + 1).padStart(2, '0')}/${dropDt.getFullYear()}`;
+                              dropoffDmy = `${String(dropDt.getDate()).padStart(2, '0')}/${String(dropDt.getMonth() + 1).padStart(2, '0')}/${dropDt.getFullYear()}`;
                               const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
                               dropDayNm = dayNames[dropDt.getDay()];
                             }
@@ -3259,52 +3410,232 @@ export default function Quotations() {
                                 style={{
                                   background: '#FFFFFF',
                                   border: '1.5px solid #FDBA74',
-                                  borderRadius: '8px',
-                                  padding: '6px 10px',
+                                  borderRadius: '10px',
+                                  padding: '9px 12px',
                                   fontSize: '0.74rem',
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: '8px',
                                   color: '#9A3412',
-                                  fontWeight: 700,
-                                  boxShadow: '0 1px 3px rgba(0,0,0,0.03)'
+                                  boxShadow: '0 1px 4px rgba(0,0,0,0.03)'
                                 }}
                               >
-                                <span style={{ color: '#EA580C', fontWeight: 800, fontSize: '0.72rem', background: '#FFF7ED', padding: '2px 5px', borderRadius: '4px', border: '1px solid #FFEDD5' }}>
-                                  Day {idx + 1}
-                                </span>
-                                <div>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                    <span style={{ fontSize: '0.68rem', color: '#16A34A', fontWeight: 800 }}>📦 Pickup:</span>
-                                    <span style={{ color: '#0F172A' }}>{pickupDmy}</span>
-                                    <span style={{ fontSize: '0.68rem', color: '#64748B' }}>({pickupDayNm})</span>
-                                  </div>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '1px' }}>
-                                    <span style={{ fontSize: '0.68rem', color: '#EA580C', fontWeight: 800 }}>🚚 Drop:</span>
-                                    <span style={{ color: '#0F172A' }}>{dropDmy}</span>
-                                    <span style={{ fontSize: '0.68rem', color: '#64748B' }}>({dropDayNm})</span>
-                                    <span style={{ fontSize: '0.62rem', background: formRepeatDeliveryMode === 'next_day' ? '#FEF3C7' : '#DCFCE7', color: formRepeatDeliveryMode === 'next_day' ? '#B45309' : '#15803D', padding: '1px 5px', borderRadius: '4px', fontWeight: 800 }}>
-                                      {formRepeatDeliveryMode === 'next_day' ? 'Tomorrow Drop' : 'Today Drop'}
+                                {/* Header Row: Day, Dates, Stepper, Delete */}
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap', marginBottom: '8px' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '7px', flexWrap: 'wrap' }}>
+                                    <span style={{ color: '#EA580C', fontWeight: 800, fontSize: '0.72rem', background: '#FFF7ED', padding: '2px 7px', borderRadius: '4px', border: '1px solid #FFEDD5' }}>
+                                      Day {idx + 1}
                                     </span>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                      <span style={{ fontSize: '0.68rem', color: '#16A34A', fontWeight: 800 }}>📦 Pickup:</span>
+                                      <span style={{ color: '#0F172A', fontWeight: 800 }}>{pickupDmy}</span>
+                                      <span style={{ fontSize: '0.68rem', color: '#64748B' }}>({pickupDayNm})</span>
+                                    </div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                      <span style={{ fontSize: '0.68rem', color: '#EA580C', fontWeight: 800 }}>🚚 Drop:</span>
+                                      <span style={{ color: '#0F172A', fontWeight: 800 }}>{dropDmy}</span>
+                                      <span style={{ fontSize: '0.68rem', color: '#64748B' }}>({dropDayNm})</span>
+                                      <span style={{ fontSize: '0.62rem', background: formRepeatDeliveryMode === 'next_day' ? '#FEF3C7' : '#DCFCE7', color: formRepeatDeliveryMode === 'next_day' ? '#B45309' : '#15803D', padding: '1px 6px', borderRadius: '4px', fontWeight: 800 }}>
+                                        {formRepeatDeliveryMode === 'next_day' ? 'Tomorrow Drop' : 'Today Drop'}
+                                      </span>
+                                    </div>
+                                  </div>
+
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
+                                    {/* Interactive Quantity Stepper for this specific day */}
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', background: '#FFF7ED', border: '1px solid #FED7AA', padding: '2px 6px', borderRadius: '6px' }}>
+                                      <span style={{ fontSize: '0.68rem', fontWeight: 800, color: '#9A3412' }}>Lorries:</span>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          if (currentQty > 1) {
+                                            setRepeatDateQuantities(prev => ({
+                                              ...prev,
+                                              [iso]: currentQty - 1
+                                            }));
+                                          }
+                                        }}
+                                        disabled={currentQty <= 1}
+                                        style={{
+                                          width: '19px',
+                                          height: '19px',
+                                          border: '1px solid #FDBA74',
+                                          borderRadius: '4px',
+                                          background: '#FFF',
+                                          color: currentQty <= 1 ? '#CBD5E1' : '#9A3412',
+                                          fontWeight: 800,
+                                          fontSize: '0.76rem',
+                                          cursor: currentQty <= 1 ? 'not-allowed' : 'pointer',
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          justifyContent: 'center',
+                                          padding: 0
+                                        }}
+                                      >
+                                        -
+                                      </button>
+                                      <span style={{ fontSize: '0.78rem', fontWeight: 900, color: '#C2410C', minWidth: '16px', textAlign: 'center' }}>
+                                        {currentQty}
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setRepeatDateQuantities(prev => ({
+                                            ...prev,
+                                            [iso]: Math.min(50, currentQty + 1)
+                                          }));
+                                        }}
+                                        style={{
+                                          width: '19px',
+                                          height: '19px',
+                                          border: '1px solid #FDBA74',
+                                          borderRadius: '4px',
+                                          background: '#FFF',
+                                          color: '#9A3412',
+                                          fontWeight: 800,
+                                          fontSize: '0.76rem',
+                                          cursor: 'pointer',
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          justifyContent: 'center',
+                                          padding: 0
+                                        }}
+                                      >
+                                        +
+                                      </button>
+                                    </div>
+
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleDate(iso)}
+                                      style={{
+                                        background: '#FEE2E2',
+                                        border: '1px solid #FCA5A5',
+                                        borderRadius: '5px',
+                                        cursor: 'pointer',
+                                        color: '#EF4444',
+                                        fontWeight: 800,
+                                        fontSize: '0.74rem',
+                                        padding: '2px 6px',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center'
+                                      }}
+                                      title="Remove this date"
+                                    >
+                                      ✕
+                                    </button>
                                   </div>
                                 </div>
-                                <button
-                                  type="button"
-                                  onClick={() => toggleDate(iso)}
-                                  style={{
-                                    background: 'transparent',
-                                    border: 'none',
-                                    cursor: 'pointer',
-                                    color: '#EF4444',
-                                    fontWeight: 800,
-                                    fontSize: '0.82rem',
-                                    padding: '0 2px',
-                                    marginLeft: '4px'
-                                  }}
-                                  title="Remove this date"
-                                >
-                                  ✕
-                                </button>
+
+                                {/* Individual Trip Timings Row(s) */}
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', background: '#FAFAF9', padding: '6px 8px', borderRadius: '7px', border: '1px solid #F3F4F6' }}>
+                                  {Array.from({ length: currentQty }).map((_, tripIdx) => {
+                                    const tripTiming = (repeatTripTimings[iso] && repeatTripTimings[iso][tripIdx]) || {};
+                                    const pickupVal = (tripTiming.pickupTime !== undefined && tripTiming.pickupTime !== '')
+                                      ? tripTiming.pickupTime
+                                      : (formPickupTime || (tripIdx === 0 ? '08:00 AM' : (tripIdx === 1 ? '01:30 PM' : (tripIdx === 2 ? '05:00 PM' : '08:00 AM'))));
+                                    const dropoffVal = (tripTiming.dropoffTime !== undefined && tripTiming.dropoffTime !== '')
+                                      ? tripTiming.dropoffTime
+                                      : (formDropoffTime || (formRepeatDeliveryMode === 'next_day' ? '10:00 AM' : (tripIdx === 0 ? '12:00 PM' : (tripIdx === 1 ? '05:30 PM' : (tripIdx === 2 ? '09:00 PM' : '02:00 PM')))));
+
+                                    return (
+                                      <div
+                                        key={tripIdx}
+                                        style={{
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          justifyContent: 'space-between',
+                                          gap: '8px',
+                                          background: '#FFFFFF',
+                                          padding: '4px 8px',
+                                          borderRadius: '6px',
+                                          border: '1px solid #FED7AA',
+                                          flexWrap: 'wrap'
+                                        }}
+                                      >
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontWeight: 800, fontSize: '0.72rem', color: '#9A3412', minWidth: '70px' }}>
+                                          <Truck size={12} color="#EA580C" />
+                                          <span>{currentQty > 1 ? `Lorry #${tripIdx + 1}` : 'Timing'}:</span>
+                                        </div>
+
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', flex: 1 }}>
+                                          {/* Pickup Time */}
+                                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                            <span style={{ fontSize: '0.68rem', fontWeight: 800, color: '#16A34A', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                              <Clock size={11} color="#16A34A" /> Loading:
+                                            </span>
+                                            <select
+                                              value={pickupVal}
+                                              onChange={(e) => {
+                                                const val = e.target.value;
+                                                setRepeatTripTimings(prev => {
+                                                  const list = prev[iso] ? [...prev[iso]] : [];
+                                                  while (list.length < currentQty) {
+                                                    list.push({ pickupTime: formPickupTime || '08:00 AM', dropoffTime: formDropoffTime || '' });
+                                                  }
+                                                  list[tripIdx] = { ...list[tripIdx], pickupTime: val };
+                                                  return { ...prev, [iso]: list };
+                                                });
+                                              }}
+                                              style={{
+                                                height: '24px',
+                                                fontSize: '0.72rem',
+                                                padding: '1px 5px',
+                                                border: '1.5px solid #BBF7D0',
+                                                borderRadius: '5px',
+                                                background: '#F0FDF4',
+                                                fontWeight: 800,
+                                                color: '#166534',
+                                                cursor: 'pointer'
+                                              }}
+                                            >
+                                              {repeatTimeSlots.map(t => (
+                                                <option key={t} value={t}>{t}</option>
+                                              ))}
+                                            </select>
+                                          </div>
+
+                                          {/* Dropoff Time */}
+                                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                            <span style={{ fontSize: '0.68rem', fontWeight: 800, color: '#EA580C', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                              <Clock size={11} color="#EA580C" /> Unloading:
+                                            </span>
+                                            <select
+                                              value={dropoffVal}
+                                              onChange={(e) => {
+                                                const val = e.target.value;
+                                                setRepeatTripTimings(prev => {
+                                                  const list = prev[iso] ? [...prev[iso]] : [];
+                                                  while (list.length < currentQty) {
+                                                    list.push({ pickupTime: formPickupTime || '08:00 AM', dropoffTime: formDropoffTime || '' });
+                                                  }
+                                                  list[tripIdx] = { ...list[tripIdx], dropoffTime: val };
+                                                  return { ...prev, [iso]: list };
+                                                });
+                                              }}
+                                              style={{
+                                                height: '24px',
+                                                fontSize: '0.72rem',
+                                                padding: '1px 5px',
+                                                border: '1.5px solid #FED7AA',
+                                                borderRadius: '5px',
+                                                background: '#FFF7ED',
+                                                fontWeight: 800,
+                                                color: '#C2410C',
+                                                cursor: 'pointer'
+                                              }}
+                                            >
+                                              <option value="">(Flexible / Any)</option>
+                                              {repeatTimeSlots.map(t => (
+                                                <option key={t} value={t}>{t}</option>
+                                              ))}
+                                            </select>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
                               </div>
                             );
                           })}
@@ -3312,7 +3643,7 @@ export default function Quotations() {
                       )}
 
                       <div style={{ marginTop: '8px', fontSize: '0.72rem', color: '#64748B' }}>
-                        ⚡ <b>Auto-Assignment:</b> When saved, the same order details (Customer, Pickup, Dropoff, Spec, Rate) will be created and dispatched for each chosen date.
+                        ⚡ <b>Auto-Assignment:</b> When saved, each lorry/order will be created with its selected loading & unloading timing on that date.
                       </div>
                     </div>
                   </div>
@@ -3797,7 +4128,7 @@ export default function Quotations() {
           <table className="grid" style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
             <thead>
               <tr>
-                <th style={{ width: '13%', padding: '10px 8px', verticalAlign: 'middle', fontSize: '0.74rem' }}>Quote # &amp; Date</th>
+                <th style={{ width: '13%', padding: '10px 8px', verticalAlign: 'middle', fontSize: '0.74rem' }}>Order # &amp; Date</th>
                 <th style={{ width: '16%', padding: '10px 8px', verticalAlign: 'middle', fontSize: '0.74rem' }}>Customer</th>
                 <th style={{ width: '22%', padding: '10px 8px', verticalAlign: 'middle', fontSize: '0.74rem' }}>Route &amp; Date</th>
                 <th style={{ width: '13%', padding: '10px 8px', verticalAlign: 'middle', fontSize: '0.74rem' }}>Cargo &amp; Vehicle</th>
@@ -3808,7 +4139,7 @@ export default function Quotations() {
             </thead>
             <tbody>
               {filteredQuotes.length > 0 ? (
-                filteredQuotes.map((x) => {
+                paginatedQuotes.map((x) => {
                   const pickupStr = x.pickup_location || x.pickup || '—';
                   const dropoffStr = x.dropoff_location || x.dropoff || '—';
                   const rateVal = x.quoted_rate || x.rate_amount || 0;
@@ -3966,13 +4297,20 @@ export default function Quotations() {
               )}
             </tbody>
           </table>
+          <Pagination
+            currentPage={page}
+            totalItems={filteredQuotes.length}
+            pageSize={pageSize}
+            onPageChange={setPage}
+            itemName="quotations"
+          />
         </div>
       </div>
 
       {/* Mobile Cards View */}
       <div className="mobile-cards-container">
         {filteredQuotes.length > 0 ? (
-          filteredQuotes.map((x) => {
+          paginatedQuotes.map((x) => {
             const pickupStr = x.pickup_location || x.pickup || '—';
             const dropoffStr = x.dropoff_location || x.dropoff || '—';
             const rateVal = x.quoted_rate || x.rate_amount || 0;
@@ -4085,6 +4423,14 @@ export default function Quotations() {
             No quotations matching the selected filter.
           </div>
         )}
+        <Pagination
+          currentPage={page}
+          totalItems={filteredQuotes.length}
+          pageSize={pageSize}
+          onPageChange={setPage}
+          itemName="quotations"
+          style={{ borderRadius: '12px', border: '1px solid var(--line)', marginTop: '12px' }}
+        />
       </div>
 
       {/* Full Quotation Details & Print Letterhead Modal Popup */}
@@ -4142,7 +4488,7 @@ function QuotationDetailModal({ quote, customers, onClose, onEdit, onNavigateBoa
   const contactPerson = custObj?.contact_person || quote.contact_person || 'kum';
   const customerPhone = custObj?.phone || quote.phone || '';
   const customerEmail = custObj?.email || quote.email || '';
-  const quoteRef = quote.quote_no || quote.customer_ref || 'Rens20260801';
+  const quoteRef = quote.quote_no || quote.customer_ref || 'rensorder01';
   const displayDate = quote.collection_date || quote.order_date || (quote.created_at ? fmtDate(quote.created_at) : new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }));
   const paymentTerms = quote.payment_terms || custObj?.payment_terms || '30 credit from date of invoice.';
 

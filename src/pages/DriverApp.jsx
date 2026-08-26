@@ -48,21 +48,28 @@ import {
 const OFFLINE_KEY = 'rens_driver_queue';
 
 const DEFAULT_FLEET_DRIVERS = [
-  { id: 'drv-1', name: 'Ahmad Bin Razak', phone: '017-8823419', pin: '1234', lorry: 'WVG 1089', zone: 'Zone A' },
-  { id: 'drv-2', name: 'Suresh Kumar', phone: '016-223 4589', pin: '1002', lorry: 'BNE 3491', zone: 'Zone B' },
-  { id: 'drv-3', name: 'Muhammad Hafiz', phone: '017-889 1234', pin: '1003', lorry: 'VAK 7819', zone: 'Zone C' },
-  { id: 'drv-4', name: 'Tan Boon Wah', phone: '012-678 9012', pin: '1004', lorry: 'WQC 5217', zone: 'Zone A' },
-  { id: 'drv-5', name: 'Mohd Khairul', phone: '013-456 7890', pin: '1005', lorry: 'BPP 8917', zone: 'Zone B' },
-  { id: 'drv-6', name: 'Arumugam A/L Ramasamy', phone: '019-334 5678', pin: '1006', lorry: 'VCE 4317', zone: 'Zone C' },
-  { id: 'drv-7', name: 'Lee Chee Keong', phone: '016-789 0123', pin: '1007', lorry: 'WRX 1024', zone: 'Zone A' },
-  { id: 'drv-8', name: 'Zulkifli bin Daud', phone: '011-2345 6789', pin: '1008', lorry: 'BRT 6724', zone: 'Zone B' },
-  { id: 'drv-9', name: 'K. Saravanan', phone: '018-901 2345', pin: '1009', lorry: 'VDG 9224', zone: 'Zone C' },
-  { id: 'drv-10', name: 'Roslan bin Ismail', phone: '012-901 2345', pin: '1010', lorry: 'WSY 1430', zone: 'Zone A' },
-  { id: 'drv-11', name: 'Chong Wei Loon', phone: '017-345 6789', pin: '1011', lorry: 'BTU 3830', zone: 'Zone B' },
-  { id: 'drv-12', name: 'Devendran A/L Muthu', phone: '016-456 7891', pin: '1012', lorry: 'VEH 7530', zone: 'Zone C' },
-  { id: 'drv-13', name: 'Harun bin Osman', phone: '013-890 1234', pin: '1013', lorry: 'WTB 2040', zone: 'Zone A' },
-  { id: 'drv-14', name: 'Wong Kah Fai', phone: '012-234 5679', pin: '1014', lorry: 'BWD 8240', zone: 'Zone B' },
-  { id: 'drv-15', name: 'G. Tharmalingam', phone: '018-765 4321', pin: '1015', lorry: 'VFK 9940', zone: 'Zone C' }
+  {
+    id: 'drv-default-1',
+    name: 'Ahmad Razak',
+    phone: '017-8823419',
+    pin: '1234',
+    lorry: 'WVG 8821',
+    lorry_plate: 'WVG 8821',
+    is_helper: false,
+    license_class: 'GDL E-Full',
+    ic_number: '880415-10-5541'
+  },
+  {
+    id: 'drv-default-2',
+    name: 'Muthu Kumar',
+    phone: '012-3456789',
+    pin: '1234',
+    lorry: 'BKL 4492',
+    lorry_plate: 'BKL 4492',
+    is_helper: false,
+    license_class: 'GDL D-Van',
+    ic_number: '910320-14-6683'
+  }
 ];
 
 export default function DriverApp({ onRequestConfirm }) {
@@ -71,7 +78,7 @@ export default function DriverApp({ onRequestConfirm }) {
 
   const [allDrivers, setAllDrivers] = useState(() => {
     const cached = getStorageData('drivers');
-    return cached && cached.length > 0 ? cached : DEFAULT_FLEET_DRIVERS;
+    return Array.isArray(cached) && cached.length > 0 ? cached : DEFAULT_FLEET_DRIVERS;
   });
   const [allSystemJobs, setAllSystemJobs] = useState(() => getStorageData('jobs'));
   const [showDriverSwitcher, setShowDriverSwitcher] = useState(false);
@@ -81,15 +88,12 @@ export default function DriverApp({ onRequestConfirm }) {
       const saved = localStorage.getItem('rens_driver');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (parsed.id === 'drv-active-demo' || (parsed.name && parsed.name.toLowerCase().includes('ahmad'))) {
-          parsed.id = 'drv-1';
-          parsed.name = 'Ahmad Bin Razak';
-          parsed.phone = '017-8823419';
+        if (parsed && (parsed.id || parsed.name)) {
+          return parsed;
         }
-        return parsed;
       }
     } catch (e) {}
-    return DEFAULT_FLEET_DRIVERS[0];
+    return null;
   });
 
   const [jobs, setJobs] = useState(() => getStorageData('jobs'));
@@ -164,13 +168,14 @@ export default function DriverApp({ onRequestConfirm }) {
     }, 2800);
   }, []);
 
-  // Fetch all drivers from Supabase
+  // Fetch all drivers from Supabase / Local storage
   const loadDrivers = useCallback(async () => {
+    let driversList = [];
     if (sb) {
       try {
         const { data: dList } = await sb.from('drivers').select('*').order('name');
         if (dList && dList.length > 0) {
-          const merged = dList.map(d => {
+          driversList = dList.map(d => {
             const matchedDefault = DEFAULT_FLEET_DRIVERS.find(df => df.id === d.id || df.name.toLowerCase() === (d.name || '').toLowerCase());
             return {
               ...matchedDefault,
@@ -178,10 +183,18 @@ export default function DriverApp({ onRequestConfirm }) {
               pin: d.pin || matchedDefault?.pin || '1234'
             };
           });
-          setAllDrivers(merged);
         }
       } catch (_) {}
     }
+    if (!driversList || driversList.length === 0) {
+      const cached = getStorageData('drivers');
+      if (Array.isArray(cached) && cached.length > 0) {
+        driversList = cached.map(d => ({ ...d, pin: d.pin || '1234' }));
+      } else {
+        driversList = DEFAULT_FLEET_DRIVERS;
+      }
+    }
+    setAllDrivers(driversList);
   }, []);
 
   useEffect(() => {
@@ -194,7 +207,8 @@ export default function DriverApp({ onRequestConfirm }) {
     const cacheKey = `rens_driver_jobs_${drv.id || 'default'}`;
 
     let data = [];
-    let allJobs = [];
+    let allJobs = getStorageData('jobs') || [];
+
     if (sb) {
       try {
         const { data: j } = await sb
@@ -203,79 +217,90 @@ export default function DriverApp({ onRequestConfirm }) {
           .neq('status', 'cancelled')
           .order('created_at', { ascending: false });
 
-        allJobs = j || [];
-
-        // Check local storage jobs too
-        try {
-          const rawStored = localStorage.getItem('rens_db_jobs');
-          if (rawStored) {
-            const parsed = JSON.parse(rawStored);
-            if (Array.isArray(parsed) && parsed.length > 0) {
-              const existingIds = new Set(allJobs.map(x => x.id));
-              parsed.forEach(pj => {
-                if (pj && !existingIds.has(pj.id)) {
-                  allJobs.push(pj);
-                } else if (pj) {
-                  const idx = allJobs.findIndex(x => x.id === pj.id || (pj.job_no && x.job_no === pj.job_no));
-                  if (idx >= 0) {
-                    allJobs[idx] = { ...allJobs[idx], ...pj };
-                  }
-                }
-              });
+        if (j && j.length > 0) {
+          const existingIds = new Set(j.map(x => x.id));
+          allJobs.forEach(pj => {
+            if (pj && !existingIds.has(pj.id)) {
+              j.push(pj);
             }
-          }
-        } catch (_) {}
-
-        allJobs = deduplicateJobs(allJobs);
-        setAllSystemJobs(allJobs);
-
-        if (allJobs && allJobs.length > 0) {
-          const drvId = String(drv.id || '');
-          const drvName = (drv.name || '').toLowerCase().trim();
-          const drvFirst = drvName.split(' ')[0];
-
-          // Match jobs assigned to this driver
-          data = allJobs.filter(job => {
-            // ONLY show to the driver once finalized on Finalize page, or already in transit / delivered
-            const isFinalizedOrActive = 
-              job.status === 'in_transit' ||
-              job.status === 'delivered' ||
-              ((job.is_finalized === 1 || job.is_finalized === true || Boolean(job.finalized_at)) && job.status === 'assigned');
-            
-            if (!isFinalizedOrActive) return false;
-
-            const jDrvId = String(job.driver_id || '');
-            const isDirectDriver = jDrvId && (
-              jDrvId === drvId ||
-              (drvId === 'drv-1' && jDrvId === 'drv-active-demo') ||
-              (drvId === 'drv-active-demo' && jDrvId === 'drv-1') ||
-              (drvName.includes('ahmad') && jDrvId === 'drv-1') ||
-              (drvName.includes('roslan') && (jDrvId === 'drv-10' || jDrvId === 'drv-roslan'))
-            );
-
-            const isDirectName = job.driver?.name && (
-              job.driver.name.toLowerCase().includes(drvName) ||
-              drvName.includes(job.driver.name.toLowerCase()) ||
-              (drvFirst && job.driver.name.toLowerCase().includes(drvFirst))
-            );
-
-            const isCrewDriver = job.job_crew && job.job_crew.some(c => {
-              const cId = String(c.driver?.id || c.driver_id || c.id || '');
-              const cName = (c.driver?.name || c.name || '').toLowerCase();
-              return cId === drvId ||
-                     (drvId === 'drv-1' && (cId === 'drv-active-demo' || cId === 'drv-1')) ||
-                     (drvId === 'drv-active-demo' && (cId === 'drv-1' || cId === 'drv-active-demo')) ||
-                     (drvName.includes('ahmad') && (cId === 'drv-1' || cName.includes('ahmad'))) ||
-                     (drvName.includes('roslan') && (cId === 'drv-10' || cName.includes('roslan'))) ||
-                     (drvFirst && cName && cName.includes(drvFirst));
-            });
-
-            return isDirectDriver || isDirectName || isCrewDriver;
           });
+          allJobs = j;
         }
       } catch (e) {
-        console.warn('Error loading driver jobs:', e);
+        console.warn('Error loading jobs from sb:', e);
       }
+    }
+
+    // Check local storage jobs too
+    try {
+      const rawStored = localStorage.getItem('rens_db_jobs');
+      if (rawStored) {
+        const parsed = JSON.parse(rawStored);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const existingIds = new Set(allJobs.map(x => x.id));
+          parsed.forEach(pj => {
+            if (pj && !existingIds.has(pj.id)) {
+              allJobs.push(pj);
+            } else if (pj) {
+              const idx = allJobs.findIndex(x => x.id === pj.id || (pj.job_no && x.job_no === pj.job_no));
+              if (idx >= 0) {
+                allJobs[idx] = { ...allJobs[idx], ...pj };
+              }
+            }
+          });
+        }
+      }
+    } catch (_) {}
+
+    allJobs = deduplicateJobs(allJobs);
+    setAllSystemJobs(allJobs);
+
+    if (allJobs && allJobs.length > 0) {
+      const drvId = String(drv.id || '');
+      const drvName = (drv.name || '').toLowerCase().trim();
+      const drvFirst = drvName.split(' ')[0];
+      const drvLorry = (drv.lorry || '').toLowerCase().replace(/\s+/g, '');
+
+      // Match jobs assigned to this driver that have been FINALIZED / dispatched
+      data = allJobs.filter(job => {
+        // Only show jobs once finalized / dispatched, or already in transit / delivered
+        const isFinalizedOrDispatched = Boolean(
+          job.is_finalized === 1 ||
+          job.is_finalized === true ||
+          job.finalized_at ||
+          job.status === 'in_transit' ||
+          job.status === 'delivered'
+        );
+        if (!isFinalizedOrDispatched) return false;
+
+        // Show assigned, in_transit, or delivered trips
+        const isAssignedOrActive = 
+          job.status === 'assigned' ||
+          job.status === 'in_transit' ||
+          job.status === 'delivered';
+        
+        if (!isAssignedOrActive) return false;
+
+        const jDrvId = String(job.driver_id || '');
+        const jLorry = String(job.lorry_id || job.lorry?.plate_no || job.lorry_plate || '').toLowerCase().replace(/\s+/g, '');
+
+        const isDirectDriver = jDrvId && jDrvId === drvId;
+
+        const isDirectName = job.driver?.name && (
+          job.driver.name.toLowerCase().includes(drvName) ||
+          drvName.includes(job.driver.name.toLowerCase())
+        );
+
+        const isLorryMatch = drvLorry && jLorry && (drvLorry.includes(jLorry) || jLorry.includes(drvLorry));
+
+        const isCrewDriver = job.job_crew && job.job_crew.some(c => {
+          const cId = String(c.driver?.id || c.driver_id || c.id || '');
+          const cName = (c.driver?.name || c.name || '').toLowerCase();
+          return cId === drvId || (cName && drvName && (cName.includes(drvName) || drvName.includes(cName)));
+        });
+
+        return isDirectDriver || isDirectName || isCrewDriver || isLorryMatch;
+      });
     }
 
     try {
@@ -330,24 +355,35 @@ export default function DriverApp({ onRequestConfirm }) {
   const driverActiveJobCounts = useMemo(() => {
     const counts = {};
     allSystemJobs.forEach(job => {
-      // Only count finalized / dispatched trips
-      const isFinalizedOrActive = 
-        job.status === 'in_transit' ||
-        job.status === 'delivered' ||
-        ((job.is_finalized === 1 || job.is_finalized === true || Boolean(job.finalized_at)) && job.status === 'assigned');
-      
-      if (!isFinalizedOrActive || job.status === 'delivered' || job.status === 'cancelled') return;
+      // Only count active assigned or in_transit trips that are finalized
+      const isFinalizedOrDispatched = Boolean(
+        job.is_finalized === 1 ||
+        job.is_finalized === true ||
+        job.finalized_at ||
+        job.status === 'in_transit'
+      );
+      if (!isFinalizedOrDispatched) return;
+
+      const isAssignedOrActive = job.status === 'assigned' || job.status === 'in_transit';
+      if (!isAssignedOrActive) return;
 
       allDrivers.forEach(d => {
         const dId = String(d.id);
-        const dName = d.name.toLowerCase();
+        const dName = (d.name || '').toLowerCase().trim();
         const dFirst = dName.split(' ')[0];
+        const dLorry = (d.lorry || '').toLowerCase().replace(/\s+/g, '');
 
-        const isDirect = String(job.driver_id) === dId || (job.driver?.name && job.driver.name.toLowerCase().includes(dFirst));
+        const jDrvId = String(job.driver_id || '');
+        const jLorry = String(job.lorry_id || job.lorry?.plate_no || job.lorry_plate || '').toLowerCase().replace(/\s+/g, '');
+
+        const isDirect = (jDrvId && jDrvId === dId) || 
+                         (job.driver?.name && (job.driver.name.toLowerCase().includes(dName) || dName.includes(job.driver.name.toLowerCase()))) ||
+                         (dLorry && jLorry && (jLorry.includes(dLorry) || dLorry.includes(jLorry)));
+
         const isCrew = job.job_crew && job.job_crew.some(c => {
           const cId = String(c.driver?.id || c.driver_id || c.id || '');
           const cName = (c.driver?.name || c.name || '').toLowerCase();
-          return cId === dId || (dFirst && cName.includes(dFirst));
+          return cId === dId || (dName && cName.includes(dName));
         });
 
         if (isDirect || isCrew) {
@@ -395,44 +431,71 @@ export default function DriverApp({ onRequestConfirm }) {
   };
 
   const handleLogin = async (customPin = pin) => {
-    const finalPin = customPin || pin || '1234';
-    const finalPhone = phone || '017-8823419';
-    localStorage.setItem('rens_driver_phone', finalPhone);
+    const finalPin = String(customPin || pin || '').trim();
+    const finalPhone = String(phone || '').trim();
+    if (finalPhone) localStorage.setItem('rens_driver_phone', finalPhone);
     
     let foundDriver = null;
+    let list = allDrivers && allDrivers.length > 0 ? allDrivers : DEFAULT_FLEET_DRIVERS;
+
     if (sb) {
       try {
-        const cleanPhone = finalPhone.replace(/\D/g, '');
-        const { data } = await sb.from('drivers').select('*').eq('pin', finalPin);
+        const { data } = await sb.from('drivers').select('*');
         if (data && data.length > 0) {
-          foundDriver = data.find(d => d.phone === finalPhone || (d.phone && d.phone.replace(/\D/g, '').endsWith(cleanPhone.slice(-9)))) || data[0];
+          list = data.map(d => ({
+            ...d,
+            pin: d.pin || '1234'
+          }));
         }
       } catch (e) {}
     }
+
+    if (!list || list.length === 0) {
+      list = DEFAULT_FLEET_DRIVERS;
+    }
+
+    const cleanPhone = finalPhone.replace(/\D/g, '');
+
+    // 1. Exact phone + PIN match
+    if (cleanPhone && finalPin) {
+      foundDriver = list.find(d => {
+        const dPin = String(d.pin || '1234').trim();
+        const dPhoneClean = String(d.phone || '').replace(/\D/g, '');
+        const matchPhone = cleanPhone && (dPhoneClean.endsWith(cleanPhone.slice(-8)) || cleanPhone.endsWith(dPhoneClean.slice(-8)));
+        return matchPhone && dPin === finalPin;
+      });
+    }
+
+    // 2. Match by phone alone (accept 1234, 0000, 12345 or matching pin)
+    if (!foundDriver && cleanPhone) {
+      foundDriver = list.find(d => {
+        const dPhoneClean = String(d.phone || '').replace(/\D/g, '');
+        const matchPhone = cleanPhone && (dPhoneClean.endsWith(cleanPhone.slice(-8)) || cleanPhone.endsWith(dPhoneClean.slice(-8)));
+        const dPin = String(d.pin || '1234').trim();
+        return matchPhone && (dPin === finalPin || finalPin === '1234' || finalPin === '0000' || finalPin === '12345');
+      });
+    }
+
+    // 3. Match by PIN alone across drivers
+    if (!foundDriver && finalPin) {
+      foundDriver = list.find(d => String(d.pin || '1234').trim() === finalPin);
+    }
+
+    // 4. Fallback driver if standard PIN (1234, 0000, 12345)
+    if (!foundDriver && (finalPin === '1234' || finalPin === '0000' || finalPin === '12345')) {
+      foundDriver = list[0] || DEFAULT_FLEET_DRIVERS[0];
+    }
+
     if (!foundDriver) {
-      if (finalPin === '8888') {
-        foundDriver = { id: 'drv-3', name: 'Mohd Sufian Ismail', phone: phone || '019-3322110', pin: '8888', status: 'on_duty' };
-      } else {
-        foundDriver = {
-          id: 'drv-1',
-          name: 'Ahmad Bin Razak',
-          phone: phone || '017-8823419',
-          pin: finalPin,
-          status: 'on_duty'
-        };
-      }
+      setPinError(true);
+      mobileToast('Driver not found. Enter PIN: 1234 or select profile below.', 'err');
+      return;
     }
 
     setDriver(foundDriver);
     localStorage.setItem('rens_driver', JSON.stringify(foundDriver));
     mobileToast(`Welcome, ${foundDriver.name.split(' ')[0]}!`, 'ok');
     loadJobs(foundDriver);
-  };
-
-  const quickDemoLogin = (pNum, pCode) => {
-    setPhone(pNum);
-    setPin(pCode);
-    handleLogin(pCode);
   };
 
   // Status Action: Start Trip or Open e-POD
@@ -596,7 +659,14 @@ export default function DriverApp({ onRequestConfirm }) {
     mobileToast('Signed out of Driver Mobile PWA', 'ok');
   };
 
-  const activeJobs = jobs.filter(j => j.status === 'assigned' || j.status === 'in_transit');
+  const isJobFinalized = (job) => Boolean(
+    job.is_finalized === 1 ||
+    job.is_finalized === true ||
+    job.finalized_at ||
+    job.status === 'in_transit' ||
+    job.status === 'delivered'
+  );
+  const activeJobs = jobs.filter(j => (j.status === 'assigned' || j.status === 'in_transit') && isJobFinalized(j));
   const pastJobs = jobs.filter(j => j.status === 'delivered');
 
   return (
@@ -903,55 +973,70 @@ export default function DriverApp({ onRequestConfirm }) {
                   </button>
                 </div>
 
-                {/* Quick Demo Sign-in */}
-                <div style={{ textAlign: 'center', marginBottom: '4px' }}>
-                  <div style={{ fontSize: '0.65rem', color: '#64748B', fontWeight: 700, marginBottom: '6px', letterSpacing: '0.04em' }}>
-                    SELECT DRIVER PROFILE TO SIGN IN
+                {/* Quick Driver Profile Quick-Select & Default PIN info */}
+                <div style={{
+                  background: 'rgba(30, 41, 59, 0.7)',
+                  border: '1px solid rgba(255, 255, 255, 0.08)',
+                  borderRadius: '12px',
+                  padding: '8px 10px',
+                  marginTop: '6px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '6px'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.7rem', color: '#94A3B8' }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <KeyRound size={12} color="#F97316" />
+                      Default PIN: <strong style={{ color: '#F97316' }}>1234</strong>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleLogin('1234')}
+                      style={{
+                        background: 'rgba(249, 115, 22, 0.2)',
+                        border: '1px solid rgba(249, 115, 22, 0.4)',
+                        color: '#FB923C',
+                        padding: '2px 8px',
+                        borderRadius: '6px',
+                        fontSize: '0.68rem',
+                        fontWeight: 700,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Quick Sign-in
+                    </button>
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '6px', maxHeight: '130px', overflowY: 'auto', padding: '2px' }}>
-                    {allDrivers.map(d => {
-                      const activeCount = driverActiveJobCounts[String(d.id)] || 0;
-                      return (
+
+                  {allDrivers && allDrivers.length > 0 && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                      {allDrivers.slice(0, 3).map(d => (
                         <button
-                          key={d.id}
+                          key={d.id || d.name}
                           type="button"
                           onClick={() => {
-                            setPhone(d.phone || '017-8823419');
-                            setPin(d.pin || '1234');
+                            setPhone(d.phone || '');
                             handleSelectDriver(d);
                           }}
                           style={{
-                            background: activeCount > 0 ? 'rgba(249, 115, 22, 0.15)' : 'rgba(30, 41, 59, 0.9)',
-                            border: activeCount > 0 ? '1px solid #F97316' : '1px solid #334155',
-                            color: activeCount > 0 ? '#FB923C' : '#CBD5E1',
-                            fontSize: '0.7rem',
-                            fontWeight: 700,
-                            padding: '6px 8px',
-                            borderRadius: '8px',
-                            cursor: 'pointer',
-                            textAlign: 'left',
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: '2px'
+                            background: '#0F172A',
+                            border: '1px solid #334155',
+                            color: '#E2E8F0',
+                            borderRadius: '6px',
+                            padding: '3px 7px',
+                            fontSize: '0.66rem',
+                            fontWeight: 600,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            cursor: 'pointer'
                           }}
                         >
-                          <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: 800 }}>
-                            {d.name}
-                          </div>
-                          <div style={{ fontSize: '0.62rem', color: activeCount > 0 ? '#F97316' : '#64748B', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span>{d.lorry || 'Lorry'}</span>
-                            {activeCount > 0 ? (
-                              <span style={{ background: '#F97316', color: '#FFF', padding: '0 4px', borderRadius: '4px', fontWeight: 800 }}>
-                                {activeCount} Active
-                              </span>
-                            ) : (
-                              <span>PIN: {d.pin || '1234'}</span>
-                            )}
-                          </div>
+                          <User size={10} color="#38BDF8" />
+                          <span>{d.name.split(' ')[0]} ({d.phone || '1234'})</span>
                         </button>
-                      );
-                    })}
-                  </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -962,8 +1047,8 @@ export default function DriverApp({ onRequestConfirm }) {
               <div style={{
                 position: 'relative',
                 display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
+                flexDirection: 'column',
+                gap: '8px',
                 background: 'linear-gradient(145deg, #1E293B 0%, #0F172A 100%)',
                 border: '1px solid rgba(255, 255, 255, 0.08)',
                 padding: '10px 12px',
@@ -972,162 +1057,191 @@ export default function DriverApp({ onRequestConfirm }) {
                 boxShadow: '0 4px 16px rgba(0, 0, 0, 0.3)',
                 flexShrink: 0
               }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0, flex: 1 }}>
-                  <div
-                    onClick={() => setShowDriverSwitcher(true)}
-                    title="Click to Switch Driver Profile"
-                    style={{
-                      position: 'relative',
-                      width: '40px',
-                      height: '40px',
-                      borderRadius: '12px',
-                      background: 'linear-gradient(135deg, #F97316 0%, #EA580C 100%)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontWeight: 800,
-                      fontSize: '1.05rem',
-                      color: '#FFF',
-                      cursor: 'pointer',
-                      flexShrink: 0,
-                      boxShadow: '0 4px 12px rgba(249, 115, 22, 0.35)'
-                    }}
-                  >
-                    {driver.name ? driver.name.charAt(0) : 'D'}
-                    <span style={{
-                      position: 'absolute',
-                      bottom: '-1px',
-                      right: '-1px',
-                      width: '10px',
-                      height: '10px',
-                      borderRadius: '50%',
-                      background: dutyStatus === 'on_duty' ? '#10B981' : (dutyStatus === 'on_break' ? '#F59E0B' : '#64748B'),
-                      border: '2px solid #0F172A'
-                    }} />
-                  </div>
-
-                  <div style={{ minWidth: 0, flex: 1 }}>
+                {/* Row 1: Driver Avatar, Name & Right Action Buttons */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '9px', minWidth: 0, flex: 1 }}>
                     <div
                       onClick={() => setShowDriverSwitcher(true)}
+                      title="Click to Switch Driver Profile"
                       style={{
-                        fontWeight: 800,
-                        fontSize: '0.9rem',
-                        color: '#FFF',
-                        cursor: 'pointer',
+                        position: 'relative',
+                        width: '34px',
+                        height: '34px',
+                        borderRadius: '10px',
+                        background: 'linear-gradient(135deg, #F97316 0%, #EA580C 100%)',
                         display: 'flex',
                         alignItems: 'center',
-                        gap: '5px',
-                        whiteSpace: 'nowrap',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis'
+                        justifyContent: 'center',
+                        fontWeight: 800,
+                        fontSize: '0.95rem',
+                        color: '#FFF',
+                        cursor: 'pointer',
+                        flexShrink: 0,
+                        boxShadow: '0 3px 10px rgba(249, 115, 22, 0.35)'
                       }}
-                      title="Click to switch driver profile"
                     >
-                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{driver.name}</span>
-                      <Users size={12} style={{ color: '#F97316', opacity: 0.85, flexShrink: 0 }} />
-                    </div>
-
-                    {/* Duty Status & Lorry Plate */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '3px', whiteSpace: 'nowrap' }}>
-                      <button
-                        type="button"
-                        onClick={() => setShowDutyMenu(prev => !prev)}
-                        style={{
-                          background: dutyStatus === 'on_duty' ? 'rgba(16, 185, 129, 0.15)' : (dutyStatus === 'on_break' ? 'rgba(245, 158, 11, 0.15)' : 'rgba(148, 163, 184, 0.15)'),
-                          border: `1px solid ${dutyStatus === 'on_duty' ? 'rgba(16, 185, 129, 0.3)' : (dutyStatus === 'on_break' ? 'rgba(245, 158, 11, 0.3)' : 'rgba(148, 163, 184, 0.3)')}`,
-                          padding: '2px 7px',
-                          borderRadius: '999px',
-                          cursor: 'pointer',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '4px',
-                          fontSize: '0.64rem',
-                          fontWeight: 700,
-                          color: dutyStatus === 'on_duty' ? '#34D399' : (dutyStatus === 'on_break' ? '#FBBF24' : '#94A3B8'),
-                          whiteSpace: 'nowrap',
-                          lineHeight: 1
-                        }}
-                      >
-                        <span style={{
-                          width: '5px',
-                          height: '5px',
-                          borderRadius: '50%',
-                          background: dutyStatus === 'on_duty' ? '#10B981' : (dutyStatus === 'on_break' ? '#F59E0B' : '#64748B'),
-                          flexShrink: 0
-                        }} />
-                        {dutyStatus === 'on_duty' && 'On-Duty'}
-                        {dutyStatus === 'on_break' && 'On Break'}
-                        {dutyStatus === 'off_duty' && 'Off Duty'}
-                        <ChevronDown size={10} />
-                      </button>
-
+                      {driver.name ? driver.name.charAt(0) : 'D'}
                       <span style={{
-                        fontSize: '0.65rem',
-                        color: '#94A3B8',
-                        fontWeight: 700,
-                        background: 'rgba(15, 23, 42, 0.6)',
-                        padding: '2px 6px',
-                        borderRadius: '4px',
-                        border: '1px solid rgba(255, 255, 255, 0.05)',
-                        whiteSpace: 'nowrap'
-                      }}>
-                        {driver.lorry || 'BTU 3830'}
-                      </span>
+                        position: 'absolute',
+                        bottom: '-1px',
+                        right: '-1px',
+                        width: '8px',
+                        height: '8px',
+                        borderRadius: '50%',
+                        background: dutyStatus === 'on_duty' ? '#10B981' : (dutyStatus === 'on_break' ? '#F59E0B' : '#64748B'),
+                        border: '2px solid #0F172A'
+                      }} />
                     </div>
+
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div
+                        onClick={() => setShowDriverSwitcher(true)}
+                        style={{
+                          fontWeight: 800,
+                          fontSize: '0.9rem',
+                          color: '#F8FAFC',
+                          cursor: 'pointer',
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          lineHeight: 1.2
+                        }}
+                        title={`Driver: ${driver.name} (Click to switch)`}
+                      >
+                        {driver.name}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Switch & Sign out */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexShrink: 0 }}>
+                    <button
+                      type="button"
+                      onClick={() => setShowDriverSwitcher(true)}
+                      style={{
+                        background: 'rgba(56, 189, 248, 0.12)',
+                        border: '1px solid rgba(56, 189, 248, 0.28)',
+                        color: '#38BDF8',
+                        fontSize: '0.68rem',
+                        fontWeight: 700,
+                        height: '26px',
+                        padding: '0 8px',
+                        borderRadius: '7px',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        cursor: 'pointer',
+                        whiteSpace: 'nowrap'
+                      }}
+                      title="Switch driver account"
+                    >
+                      <Users size={12} /> Switch
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleLogout}
+                      title="Sign Out"
+                      style={{
+                        background: 'rgba(239, 68, 68, 0.12)',
+                        border: '1px solid rgba(239, 68, 68, 0.3)',
+                        color: '#F87171',
+                        width: '26px',
+                        height: '26px',
+                        borderRadius: '7px',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        cursor: 'pointer',
+                        flexShrink: 0
+                      }}
+                    >
+                      <LogOut size={12} />
+                    </button>
                   </div>
                 </div>
 
-                {/* Switch & Sign out */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexShrink: 0, marginLeft: '6px' }}>
-                  <button
-                    type="button"
-                    onClick={() => setShowDriverSwitcher(true)}
-                    style={{
-                      background: 'rgba(56, 189, 248, 0.12)',
-                      border: '1px solid rgba(56, 189, 248, 0.28)',
-                      color: '#38BDF8',
-                      fontSize: '0.68rem',
+                {/* Row 2: Duty Status Toggle & Lorry Plate */}
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  paddingTop: '6px',
+                  borderTop: '1px solid rgba(255, 255, 255, 0.06)',
+                  gap: '6px'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0, flex: 1 }}>
+                    <button
+                      type="button"
+                      onClick={() => setShowDutyMenu(prev => !prev)}
+                      style={{
+                        background: dutyStatus === 'on_duty' ? 'rgba(16, 185, 129, 0.15)' : (dutyStatus === 'on_break' ? 'rgba(245, 158, 11, 0.15)' : 'rgba(148, 163, 184, 0.15)'),
+                        border: `1px solid ${dutyStatus === 'on_duty' ? 'rgba(16, 185, 129, 0.3)' : (dutyStatus === 'on_break' ? 'rgba(245, 158, 11, 0.3)' : 'rgba(148, 163, 184, 0.3)')}`,
+                        padding: '3px 8px',
+                        borderRadius: '999px',
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        fontSize: '0.64rem',
+                        fontWeight: 700,
+                        color: dutyStatus === 'on_duty' ? '#34D399' : (dutyStatus === 'on_break' ? '#FBBF24' : '#94A3B8'),
+                        whiteSpace: 'nowrap',
+                        lineHeight: 1,
+                        flexShrink: 0
+                      }}
+                    >
+                      <span style={{
+                        width: '5px',
+                        height: '5px',
+                        borderRadius: '50%',
+                        background: dutyStatus === 'on_duty' ? '#10B981' : (dutyStatus === 'on_break' ? '#F59E0B' : '#64748B'),
+                        flexShrink: 0
+                      }} />
+                      {dutyStatus === 'on_duty' && 'On-Duty'}
+                      {dutyStatus === 'on_break' && 'On Break'}
+                      {dutyStatus === 'off_duty' && 'Off Duty'}
+                      <ChevronDown size={10} />
+                    </button>
+
+                    <span style={{
+                      fontSize: '0.64rem',
+                      color: '#CBD5E1',
                       fontWeight: 700,
-                      padding: '5px 8px',
-                      borderRadius: '8px',
-                      display: 'flex',
+                      background: 'rgba(15, 23, 42, 0.65)',
+                      padding: '3px 7px',
+                      borderRadius: '5px',
+                      border: '1px solid rgba(255, 255, 255, 0.07)',
+                      whiteSpace: 'nowrap',
+                      display: 'inline-flex',
                       alignItems: 'center',
                       gap: '4px',
-                      cursor: 'pointer',
-                      whiteSpace: 'nowrap'
-                    }}
-                    title="Switch driver account"
-                  >
-                    <Users size={11} /> Switch
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handleLogout}
-                    title="Sign Out"
-                    style={{
-                      background: 'rgba(239, 68, 68, 0.12)',
-                      border: '1px solid rgba(239, 68, 68, 0.3)',
-                      color: '#F87171',
-                      width: '28px',
-                      height: '28px',
-                      borderRadius: '8px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      cursor: 'pointer',
                       flexShrink: 0
-                    }}
-                  >
-                    <LogOut size={13} />
-                  </button>
+                    }}>
+                      🚛 {driver.lorry || 'WVG 1089'}
+                    </span>
+                  </div>
+
+                  {driver.zone && (
+                    <span style={{
+                      fontSize: '0.6rem',
+                      color: '#94A3B8',
+                      fontWeight: 600,
+                      background: 'rgba(255, 255, 255, 0.04)',
+                      padding: '2px 6px',
+                      borderRadius: '4px',
+                      flexShrink: 0
+                    }}>
+                      {driver.zone}
+                    </span>
+                  )}
                 </div>
 
                 {/* Dropdown Menu for Duty Status */}
                 {showDutyMenu && (
                   <div style={{
                     position: 'absolute',
-                    top: '54px',
+                    top: '74px',
                     left: '12px',
                     zIndex: 200,
                     background: '#0F172A',
@@ -1267,6 +1381,9 @@ export default function DriverApp({ onRequestConfirm }) {
                 style={{
                   flex: 1,
                   overflowY: 'auto',
+                  WebkitOverflowScrolling: 'touch',
+                  overscrollBehavior: 'contain',
+                  touchAction: 'pan-y',
                   paddingRight: '2px',
                   display: 'flex',
                   flexDirection: 'column',
