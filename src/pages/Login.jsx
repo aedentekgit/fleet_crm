@@ -22,8 +22,8 @@ export default function Login() {
   const { login } = useAuth();
   const { toast } = useToast();
 
-  const [username, setUsername] = useState('Dynamic');
-  const [password, setPassword] = useState('12345');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -49,7 +49,7 @@ export default function Login() {
         toast(`Welcome back, ${res.user.name}!`, 'ok');
         navigate('/sales');
       } else {
-        setError(res.error || 'Invalid credentials. Password is 12345');
+        setError(res.error || 'Invalid credentials.');
         toast(res.error || 'Login failed. Please check credentials.', 'err');
       }
     } catch (err) {
@@ -58,12 +58,6 @@ export default function Login() {
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleFillDemo = (demoUser = 'Dynamic') => {
-    setUsername(demoUser);
-    setPassword('12345');
-    setError('');
   };
 
   return (
@@ -95,8 +89,8 @@ export default function Login() {
             {/* Username Input */}
             <div className="login-field">
               <label htmlFor="login-username" className="login-label">
-                <span>Username (Dynamic)</span>
-                <span className="login-label-hint">Any staff / admin name</span>
+                <span>Username</span>
+                <span className="login-label-hint">Staff or admin username</span>
               </label>
               <div className="login-input-wrap">
                 <div className="login-input-icon">
@@ -106,7 +100,7 @@ export default function Login() {
                   id="login-username"
                   type="text"
                   className="login-input"
-                  placeholder="Enter username (e.g. Dynamic, Admin, Uthaya)"
+                  placeholder="Enter your username"
                   value={username}
                   onChange={(e) => {
                     setUsername(e.target.value);
@@ -122,7 +116,7 @@ export default function Login() {
             <div className="login-field">
               <label htmlFor="login-password" className="login-label">
                 <span>Password</span>
-                <span className="login-label-hint">Default: 12345</span>
+                <span className="login-label-hint">Enter your password</span>
               </label>
               <div className="login-input-wrap">
                 <div className="login-input-icon">
@@ -132,7 +126,7 @@ export default function Login() {
                   id="login-password"
                   type={showPassword ? 'text' : 'password'}
                   className="login-input"
-                  placeholder="Enter password (12345)"
+                  placeholder="Enter password"
                   value={password}
                   onChange={(e) => {
                     setPassword(e.target.value);

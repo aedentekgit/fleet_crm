@@ -44,6 +44,11 @@ $allowedTables = [
     'customer_contacts'
 ];
 
+@ini_set('memory_limit', '256M');
+@ini_set('post_max_size', '64M');
+@ini_set('upload_max_filesize', '64M');
+@ini_set('max_execution_time', '300');
+
 // Helper: Ensure Core Tables Exist
 function ensureTablesExist($pdo) {
     static $checked = false;
@@ -148,6 +153,8 @@ function ensureTablesExist($pdo) {
               `approved_by` VARCHAR(64) DEFAULT NULL,
               `decline_reason` TEXT DEFAULT NULL,
               `job_id` VARCHAR(64) DEFAULT NULL,
+              `invoice_no` VARCHAR(100) DEFAULT NULL,
+              `invoice_attachment` LONGTEXT DEFAULT NULL,
               `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
               `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -204,6 +211,7 @@ function ensureTablesExist($pdo) {
               `requested_by` VARCHAR(255) DEFAULT NULL,
               `flagged` TINYINT(1) NOT NULL DEFAULT 0,
               `note` TEXT DEFAULT NULL,
+              `invoice_attachment` LONGTEXT DEFAULT NULL,
               `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
               `resolved_at` DATETIME DEFAULT NULL
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -343,72 +351,57 @@ function ensureTablesExist($pdo) {
     } catch (\Throwable $e) {}
 }
 
-function seedDemoData($pdo) {
+// Auto-upgrade columns to LONGTEXT to support high-res photos, base64 images, and documents without truncation
+function ensureLongTextColumns($pdo) {
+    static $migrated = false;
+    if ($migrated) return;
+    $migrated = true;
+
+    $columnsToUpgrade = [
+        'quotations' => ['invoice_attachment', 'special_instructions', 'notes', 'raw_message'],
+        'approvals' => ['invoice_attachment', 'note'],
+        'jobs' => ['pod_photo', 'pod_signature', 'special_instructions', 'notes'],
+        'customer_price_lists' => ['tiers_json'],
+        'customers' => ['notes', 'billing_address'],
+        'maintenance_records' => ['notes', 'description']
+    ];
+
+    foreach ($columnsToUpgrade as $tbl => $cols) {
+        try {
+            $stmt = $pdo->query("SHOW COLUMNS FROM `$tbl`");
+            $existing = [];
+            while ($r = $stmt->fetch()) {
+                $existing[strtolower($r['Field'])] = strtolower($r['Type']);
+            }
+            foreach ($cols as $col) {
+                $colLower = strtolower($col);
+                if (!isset($existing[$colLower])) {
+                    $pdo->exec("ALTER TABLE `$tbl` ADD COLUMN `$col` LONGTEXT DEFAULT NULL");
+                } elseif (!str_contains($existing[$colLower], 'longtext') && !str_contains($existing[$colLower], 'mediumtext')) {
+                    $pdo->exec("ALTER TABLE `$tbl` MODIFY COLUMN `$col` LONGTEXT DEFAULT NULL");
+                }
+            }
+        } catch (\Throwable $e) {}
+    }
+}
+
+function ensureDefaultAdmin($pdo) {
     try {
-        $pdo->exec("SET FOREIGN_KEY_CHECKS = 0");
-
-        // 1. Staff
-        $pdo->exec("
-            INSERT INTO `staff` (`id`, `name`, `role`, `pin`, `active`) VALUES
-            ('staff-owner-1', 'Rens Admin', 'owner', '12345', 1),
-            ('staff-admin-1', 'Logistics Operations', 'admin', '12345', 1)
-            ON DUPLICATE KEY UPDATE `name`=VALUES(`name`), `pin`=VALUES(`pin`);
-        ");
-
-        // 2. Drivers (15 Drivers across 5 Fleet Types)
-        $pdo->exec("
-            INSERT INTO `drivers` (`id`, `name`, `phone`, `pin`, `ic_number`, `license_class`, `license_expiry`, `is_helper`, `status`) VALUES
-            ('drv-1', 'Ahmad Razak', '012-345 8901', '1001', '880512-10-5521', 'GDL - D', '2027-02-15', 0, 'available'),
-            ('drv-2', 'Suresh Kumar', '016-223 4589', '1002', '901103-14-5823', 'GDL - D', '2026-11-20', 0, 'available'),
-            ('drv-3', 'Muhammad Hafiz', '017-889 1234', '1003', '920315-08-6147', 'GDL - D', '2026-12-10', 0, 'available'),
-            ('drv-4', 'Tan Boon Wah', '012-678 9012', '1004', '850720-10-5349', 'GDL - E', '2027-01-18', 0, 'available'),
-            ('drv-5', 'Mohd Khairul', '013-456 7890', '1005', '870914-01-5231', 'GDL - E', '2026-10-30', 0, 'available'),
-            ('drv-6', 'Arumugam A/L Ramasamy', '019-334 5678', '1006', '830405-10-5677', 'GDL - E', '2027-03-05', 0, 'available'),
-            ('drv-7', 'Lee Chee Keong', '016-789 0123', '1007', '820819-14-5119', 'GDL - E (Bersendi)', '2026-12-28', 0, 'available'),
-            ('drv-8', 'Zulkifli bin Daud', '011-2345 6789', '1008', '860211-03-5491', 'GDL - E (Bersendi)', '2027-02-20', 0, 'available'),
-            ('drv-9', 'K. Saravanan', '018-901 2345', '1009', '891025-08-5773', 'GDL - E (Bersendi)', '2027-04-15', 0, 'available'),
-            ('drv-10', 'Roslan bin Ismail', '012-901 2345', '1010', '810617-10-5023', 'GDL - E (Bersendi / Berat)', '2027-03-12', 0, 'available'),
-            ('drv-11', 'Chong Wei Loon', '017-345 6789', '1011', '841208-14-5367', 'GDL - E (Bersendi / Berat)', '2026-11-05', 0, 'available'),
-            ('drv-12', 'Devendran A/L Muthu', '016-456 7891', '1012', '880330-02-5819', 'GDL - E (Bersendi / Berat)', '2027-01-25', 0, 'available'),
-            ('drv-13', 'Harun bin Osman', '013-890 1234', '1013', '790915-06-5381', 'GDL - E (Articulated)', '2027-05-10', 0, 'available'),
-            ('drv-14', 'Wong Kah Fai', '012-234 5679', '1014', '831122-10-5905', 'GDL - E (Articulated)', '2026-12-15', 0, 'available'),
-            ('drv-15', 'G. Tharmalingam', '018-765 4321', '1015', '800114-08-5267', 'GDL - E (Articulated)', '2027-02-28', 0, 'available')
-            ON DUPLICATE KEY UPDATE `name`=VALUES(`name`), `phone`=VALUES(`phone`), `pin`=VALUES(`pin`), `license_class`=VALUES(`license_class`), `license_expiry`=VALUES(`license_expiry`);
-        ");
-
-        // 3. Lorries (15 Lorries, 3 for each of the 5 fleet types)
-        $pdo->exec("
-            INSERT INTO `lorries` (`id`, `plate_no`, `capacity_desc`, `road_tax_expiry`, `insurance_expiry`, `permit_expiry`, `default_driver_id`, `status`) VALUES
-            ('lry-1', 'WVG 1089', '1 ton 9 ft', '2027-02-15', '2027-02-15', '2027-08-20', 'drv-1', 'available'),
-            ('lry-2', 'BNE 3491', '1 ton 9 ft', '2026-11-20', '2026-11-20', '2027-05-15', 'drv-2', 'available'),
-            ('lry-3', 'VAK 7819', '1 ton 9 ft', '2026-12-10', '2026-12-10', '2027-06-30', 'drv-3', 'available'),
-            ('lry-4', 'WQC 5217', '3 & 5 ton 17 ft', '2027-01-18', '2027-01-18', '2027-07-22', 'drv-4', 'available'),
-            ('lry-5', 'BPP 8917', '3 & 5 ton 17 ft', '2026-10-30', '2026-10-30', '2027-04-12', 'drv-5', 'available'),
-            ('lry-6', 'VCE 4317', '3 & 5 ton 17 ft', '2027-03-05', '2027-03-05', '2027-09-15', 'drv-6', 'available'),
-            ('lry-7', 'WRX 1024', '10 ton 24ft', '2026-12-28', '2026-12-28', '2027-06-18', 'drv-7', 'available'),
-            ('lry-8', 'BRT 6724', '10 ton 24ft', '2027-02-20', '2027-02-20', '2027-08-10', 'drv-8', 'available'),
-            ('lry-9', 'VDG 9224', '10 ton 24ft', '2027-04-15', '2027-04-15', '2027-10-05', 'drv-9', 'available'),
-            ('lry-10', 'WSY 1430', '14 ton 30ft', '2027-03-12', '2027-03-12', '2027-09-28', 'drv-10', 'available'),
-            ('lry-11', 'BTU 3830', '14 ton 30ft', '2026-11-05', '2026-11-05', '2027-05-20', 'drv-11', 'available'),
-            ('lry-12', 'VEH 7530', '14 ton 30ft', '2027-01-25', '2027-01-25', '2027-07-14', 'drv-12', 'available'),
-            ('lry-13', 'WTB 2040', '20 ton 40ft', '2027-05-10', '2027-05-10', '2027-11-20', 'drv-13', 'available'),
-            ('lry-14', 'BWD 8240', '20 ton 40ft', '2026-12-15', '2026-12-15', '2027-06-25', 'drv-14', 'available'),
-            ('lry-15', 'VFK 9940', '20 ton 40ft', '2027-02-28', '2027-02-28', '2027-08-30', 'drv-15', 'available')
-            ON DUPLICATE KEY UPDATE `plate_no`=VALUES(`plate_no`), `capacity_desc`=VALUES(`capacity_desc`), `default_driver_id`=VALUES(`default_driver_id`), `status`=VALUES(`status`);
-        ");
-
-        $pdo->exec("SET FOREIGN_KEY_CHECKS = 1");
+        $staffCount = (int)$pdo->query("SELECT COUNT(*) FROM `staff`")->fetchColumn();
+        if ($staffCount === 0) {
+            $pdo->exec("
+                INSERT INTO `staff` (`id`, `name`, `username`, `role`, `pin`, `active`) VALUES
+                ('staff-owner-1', 'Rens Admin', 'Dynamic', 'owner', '12345', 1),
+                ('staff-admin-1', 'Logistics Operations', 'Admin', 'admin', '12345', 1)
+                ON DUPLICATE KEY UPDATE `name`=VALUES(`name`), `pin`=VALUES(`pin`);
+            ");
+        }
     } catch (\Throwable $e) {}
 }
 
-// Auto seed default demo records if not yet populated
-try {
-    $staffCount = (int)$pdo->query("SELECT COUNT(*) FROM `staff`")->fetchColumn();
-    $drvCount = (int)$pdo->query("SELECT COUNT(*) FROM `drivers`")->fetchColumn();
-    if ($staffCount === 0 || $drvCount === 0) {
-        seedDemoData($pdo);
-    }
-} catch (\Throwable $e) {}
+ensureTablesExist($pdo);
+ensureLongTextColumns($pdo);
+ensureDefaultAdmin($pdo);
 
 // Helper: Ensure columns exist in table dynamically
 function ensureColumnsExist($pdo, $table, $keys) {
@@ -416,15 +409,33 @@ function ensureColumnsExist($pdo, $table, $keys) {
         $stmt = $pdo->query("SHOW COLUMNS FROM `$table`");
         $existingCols = [];
         while ($row = $stmt->fetch()) {
-            $existingCols[strtolower($row['Field'])] = true;
+            $existingCols[strtolower($row['Field'])] = strtolower($row['Type']);
         }
 
         foreach ($keys as $k) {
             $safeCol = preg_replace('/[^a-zA-Z0-9_]/', '', $k);
             if (!$safeCol) continue;
-            if (!isset($existingCols[strtolower($safeCol)])) {
-                $pdo->exec("ALTER TABLE `$table` ADD COLUMN `$safeCol` TEXT DEFAULT NULL");
-                $existingCols[strtolower($safeCol)] = true;
+            $safeColLower = strtolower($safeCol);
+
+            $isLong = str_contains($safeColLower, 'attachment') || 
+                      str_contains($safeColLower, 'photo') || 
+                      str_contains($safeColLower, 'image') || 
+                      str_contains($safeColLower, 'signature') || 
+                      str_contains($safeColLower, 'file') || 
+                      str_contains($safeColLower, 'json') || 
+                      str_contains($safeColLower, 'data') || 
+                      str_contains($safeColLower, 'message') || 
+                      str_contains($safeColLower, 'notes') || 
+                      str_contains($safeColLower, 'instruction');
+
+            $colType = $isLong ? 'LONGTEXT' : 'TEXT';
+
+            if (!isset($existingCols[$safeColLower])) {
+                $pdo->exec("ALTER TABLE `$table` ADD COLUMN `$safeCol` $colType DEFAULT NULL");
+                $existingCols[$safeColLower] = strtolower($colType);
+            } elseif ($isLong && !str_contains($existingCols[$safeColLower], 'longtext') && !str_contains($existingCols[$safeColLower], 'mediumtext')) {
+                $pdo->exec("ALTER TABLE `$table` MODIFY COLUMN `$safeCol` LONGTEXT DEFAULT NULL");
+                $existingCols[$safeColLower] = 'longtext';
             }
         }
     } catch (\Throwable $e) {}
@@ -476,8 +487,8 @@ try {
 
         if ((isset($_GET['action']) && in_array($_GET['action'], ['seed_demo', 'seed', 'seed_data'])) ||
             (isset($_POST['action']) && in_array($_POST['action'], ['seed_demo', 'seed', 'seed_data']))) {
-            seedDemoData($pdo);
-            echo json_encode(['success' => true, 'message' => 'All demo data seeded successfully into MySQL.']);
+            ensureDefaultAdmin($pdo);
+            echo json_encode(['success' => true, 'message' => 'Clean database initialized with admin staff.']);
             exit();
         }
 

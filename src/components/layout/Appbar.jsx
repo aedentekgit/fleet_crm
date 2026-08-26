@@ -63,7 +63,7 @@ export default function Appbar({ onOpenPalette, onLogoutClick }) {
         </button>
         <div className="who">
           <span className={`rolebadge ${staff?.role === 'owner' ? 'owner' : ''}`}>{staff?.role || 'owner'}</span>
-          <span style={{ color: '#F1F5F9', fontWeight: 700 }}>{staff?.name || 'Demo Staff'}</span>
+          <span style={{ color: '#F1F5F9', fontWeight: 700 }}>{staff?.name || 'Admin Staff'}</span>
           <button className="linkact d" style={{ marginLeft: '4px', border: 0, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px' }} onClick={onLogoutClick}>
             <LogOut size={13} strokeWidth={2} />
             Logout

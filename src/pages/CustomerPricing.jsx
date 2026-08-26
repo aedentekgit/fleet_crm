@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { sb, fmtMoney, fmtDate, subscribeTable, getStorageData } from '../lib/supabase';
 import { useToast } from '../context/ToastContext';
+import Pagination from '../components/common/Pagination';
 import {
   Tag,
   Building2,
@@ -202,10 +203,10 @@ export default function CustomerPricing() {
       const normDest = normalizeRouteText(dest);
       const codeWord = (entry.code_word || entry.customer_ref || '').trim();
       const normCode = codeWord.toLowerCase().trim();
-      const dieselBand = String(entry.diesel_price || '3.00').trim();
+      const dieselBand = String(entry.diesel_price || '2.00 - 2.18').trim();
 
-      // Clean unique key: destination + code_word + diesel_band
-      const key = `${normDest}:::${normCode}:::${dieselBand}`;
+      // Clean unique key: destination + code_word (so same route is unified into one comprehensive row)
+      const key = normCode ? `${normDest}:::${normCode}` : normDest;
 
       const rateMap = {};
       STANDARD_LORRY_TYPES.forEach(t => {
@@ -234,12 +235,16 @@ export default function CustomerPricing() {
         });
       } else {
         const existing = routeMap.get(key);
-        // Merge lorry rates
+        // Merge lorry rates: fill any missing rate values
         STANDARD_LORRY_TYPES.forEach(t => {
           if (rateMap[t] && rateMap[t] !== '—') {
             existing.rates[t] = rateMap[t];
           }
         });
+        // Prefer detailed diesel band over default 3.00
+        if (dieselBand && (dieselBand === '2.00 - 2.18' || existing.diesel_price === '3.00')) {
+          existing.diesel_price = dieselBand;
+        }
         if (entry.pickup_zone && (!existing.pickup_zone || existing.pickup_zone === 'Zone A')) {
           existing.pickup_zone = entry.pickup_zone;
         }
@@ -364,7 +369,7 @@ export default function CustomerPricing() {
 
       if (isMatch) {
         const tiers = r.tiers || [];
-        const primaryTier = tiers[0] || {};
+        const primaryTier = tiers.find(t => t && t.diesel_band === '2.00 - 2.18') || tiers[0] || {};
         processRoute({
           id: r.id,
           code_word: r.code_word || '',
@@ -373,13 +378,13 @@ export default function CustomerPricing() {
           drop_location: r.drop_location || '',
           pickup_zone: r.pickup_zone || r.zone || customer.zone || 'Zone A',
           drop_zone: r.drop_zone || r.zone || customer.zone || 'Zone A',
-          diesel_price: primaryTier.diesel_band ? `${primaryTier.diesel_band}` : '3.00',
+          diesel_price: primaryTier.diesel_band ? `${primaryTier.diesel_band}` : '2.00 - 2.18',
           rates: {
-            '1 ton 9 ft': primaryTier.ton1_9ft ? Number(primaryTier.ton1_9ft).toFixed(2) : '—',
-            '3 & 5 ton 17 ft': primaryTier.ton5_17ft ? Number(primaryTier.ton5_17ft).toFixed(2) : '—',
-            '10 ton 24ft': primaryTier.ton10_24ft ? Number(primaryTier.ton10_24ft).toFixed(2) : '—',
-            '14 ton 30ft': primaryTier.ft30 ? Number(primaryTier.ft30).toFixed(2) : '—',
-            '20 ton 40ft': primaryTier.ft40 ? Number(primaryTier.ft40).toFixed(2) : '—'
+            '1 ton 9 ft': (primaryTier.ton1_9ft || primaryTier['1 ton 9 ft']) ? Number(primaryTier.ton1_9ft || primaryTier['1 ton 9 ft']).toFixed(2) : '—',
+            '3 & 5 ton 17 ft': (primaryTier.ton5_17ft || primaryTier['3 & 5 ton 17 ft'] || primaryTier['3 & 5 ton']) ? Number(primaryTier.ton5_17ft || primaryTier['3 & 5 ton 17 ft'] || primaryTier['3 & 5 ton']).toFixed(2) : '—',
+            '10 ton 24ft': (primaryTier.ton10_24ft || primaryTier['10 ton 24ft']) ? Number(primaryTier.ton10_24ft || primaryTier['10 ton 24ft']).toFixed(2) : '—',
+            '14 ton 30ft': (primaryTier.ft30 || primaryTier['14 ton 30ft'] || primaryTier['14 ton']) ? Number(primaryTier.ft30 || primaryTier['14 ton 30ft'] || primaryTier['14 ton']).toFixed(2) : '—',
+            '20 ton 40ft': (primaryTier.ft40 || primaryTier['20 ton 40ft'] || primaryTier['20 ton']) ? Number(primaryTier.ft40 || primaryTier['20 ton 40ft'] || primaryTier['20 ton']).toFixed(2) : '—'
           },
           lorryTypes: STANDARD_LORRY_TYPES,
           note: r.note || '',
@@ -450,6 +455,17 @@ export default function CustomerPricing() {
 
     return list;
   }, [customers, selectedZone, statusFilter, search, getCustomerRoutes]);
+
+  const [page, setPage] = useState(1);
+  const pageSize = 10;
+
+  useEffect(() => {
+    setPage(1);
+  }, [selectedZone, statusFilter, search]);
+
+  const paginatedCustomers = useMemo(() => {
+    return filteredCustomers.slice((page - 1) * pageSize, page * pageSize);
+  }, [filteredCustomers, page, pageSize]);
 
   // Form State for Add / Edit Route Rate
   const [formData, setFormData] = useState({
@@ -914,7 +930,7 @@ export default function CustomerPricing() {
                   </td>
                 </tr>
               ) : (
-                filteredCustomers.map((cust, idx) => {
+                paginatedCustomers.map((cust, idx) => {
                   const routes = getCustomerRoutes(cust);
                   const hasRoutes = routes.length > 0;
 
@@ -931,7 +947,7 @@ export default function CustomerPricing() {
                     >
                       {/* Index */}
                       <td style={{ padding: '14px', textAlign: 'center', fontWeight: 700, color: 'var(--slate)', borderRight: '1px solid var(--line)' }}>
-                        {idx + 1}
+                        {(page - 1) * pageSize + idx + 1}
                       </td>
 
                       {/* Customer / Company */}
@@ -1073,6 +1089,13 @@ export default function CustomerPricing() {
               )}
             </tbody>
           </table>
+          <Pagination
+            currentPage={page}
+            totalItems={filteredCustomers.length}
+            pageSize={pageSize}
+            onPageChange={setPage}
+            itemName="customers"
+          />
         </div>
 
         {/* Footer Summary */}
