@@ -10,23 +10,47 @@ delivered jobs) and hands a billing queue to AutoCount; it does not issue invoic
 
 ---
 
-## What's in the box
+## Project Structure
 
-| File | Role |
-|---|---|
-| `schema.sql` | Full Postgres schema, triggers, realtime, RLS, seed staff |
-| `styles.css` | Shared Sen design system (keyboard-first components) |
-| `shared.js` | Supabase client, helpers, staff gate, toast, **command palette + keyboard engine** |
-| `board.html` | Job board (kanban) — assign lorry + crew, start/deliver, keyboard nav |
-| `quotations.html` | Paste → parse → price → send; client-confirm |
-| `approvals.html` | Owner queue: quotations + stock issuances (`Y` approve / `B` send back) |
-| `fleet.html` | Vehicles · Drivers & crew · Maintenance · Inventory (approval-gated issuance) |
-| `dashboard.html` | Owner KPIs, revenue-by-lorry, live fleet, billing queue, expiries |
-| `driver.html` | **Driver PWA** — phone+PIN login, today's jobs, offline capture |
-| `manifest.webmanifest`, `sw.js`, `icon-*.png` | PWA install + offline shell |
-| `api/parse-jobs.js` | Booking text → structured quotation (Claude) |
-| `api/notify.js` | Customer WhatsApp on confirm/deliver (+ Telegram fallback stub) |
-| `api/webhook.js` | Inbound WhatsApp/Telegram replies → status updates (fallback channel) |
+```
+Rens-ERP/
+├── backend/                  # Node.js / Express API server & MySQL connection
+│   ├── api/                  # REST endpoints (db, notify, parse-jobs, webhook)
+│   ├── db/                   # MySQL connection pool & SQL schemas
+│   ├── server.js             # Express API server (Port 5000)
+│   ├── package.json          # Backend dependencies
+│   └── .env                  # MySQL & third-party API credentials
+│
+├── frontend/                 # React 18 + Vite SPA & PWA
+│   ├── src/                  # React UI pages, components & contexts
+│   ├── public/               # Static assets & web manifest
+│   ├── vite.config.js        # Vite config with API proxy to backend
+│   ├── package.json          # Frontend dependencies
+│   └── index.html            # Entry HTML
+│
+└── package.json              # Workspace runner scripts
+```
+
+## Running Locally
+
+### 1. Backend Server
+```bash
+cd backend
+npm install
+npm run dev      # Runs API server on http://localhost:5000
+```
+
+### 2. Frontend UI
+```bash
+cd frontend
+npm install
+npm run dev      # Runs Vite dev server on http://localhost:3000 (proxies /api to :5000)
+```
+
+### 3. Run Both from Root
+```bash
+npm run dev
+```
 
 ---
 

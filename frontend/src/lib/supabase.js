@@ -133,8 +133,7 @@ try {
 
     // Trigger server cleanup to wipe demo records from MySQL
     try {
-      fetch('/api/db.php?action=clear_all_data').catch(() => {});
-      fetch('http://localhost:8080/api/db.php?action=clear_all_data').catch(() => {});
+      fetch('/api/db?action=clear_all_data').catch(() => {});
     } catch (_) {}
   }
 } catch (_) {}
@@ -189,21 +188,15 @@ export async function seedFleetDemoData() {
 
 export async function seedAllDemoData() {
   try {
-    // 1. Populate local storage with all 10 demo records per module
+    // 1. Populate local storage with all demo records per module
     Object.entries(DEMO_SEED_DATA).forEach(([table, data]) => {
       saveLocalTableData(table, data);
       notifyTableChange(table);
     });
 
-    // 2. Trigger backend MySQL database seed endpoint if available
+    // 2. Trigger backend MySQL database seed endpoint
     try {
-      const endpoints = ['/api/db.js?action=seed_demo', '/api/db.php?action=seed_demo', 'api/db.js?action=seed_demo'];
-      for (const ep of endpoints) {
-        try {
-          const res = await fetch(ep);
-          if (res.ok) break;
-        } catch (_) {}
-      }
+      await fetch('/api/db?action=seed_demo');
     } catch (_) {}
 
     return { success: true };
@@ -227,13 +220,7 @@ export async function clearDatabaseData() {
 
     // 2. Call backend DB clear endpoint
     try {
-      const endpoints = ['/api/db.php?action=clear_all_data', '/api/db.js?action=clear_all_data', 'api/db.php?action=clear_all_data'];
-      for (const ep of endpoints) {
-        try {
-          const res = await fetch(ep);
-          if (res.ok) break;
-        } catch (_) {}
-      }
+      await fetch('/api/db?action=clear_all_data');
     } catch (_) {}
 
     // 3. Notify all table listeners
@@ -303,7 +290,7 @@ export function getStorageData(tableName) {
 }
 
 function createDbProxyClient() {
-  let activeApiEndpoint = '/api/db.php';
+  let activeApiEndpoint = '/api/db';
 
   async function apiFetch(queryStringOrPath = '', options = {}) {
     let url = '';
@@ -320,9 +307,9 @@ function createDbProxyClient() {
     try {
       const res = await fetch(url, options);
       const ct = res.headers.get('content-type') || '';
-      // If endpoint returns non-JSON or 404, auto-try the alternate endpoint (.js <-> .php)
+      // If endpoint returns non-JSON or 404, auto-try alternate fallback
       if (!res.ok || !ct.includes('application/json')) {
-        const altEndpoint = activeApiEndpoint.endsWith('.php') ? '/api/db.js' : '/api/db.php';
+        const altEndpoint = activeApiEndpoint === '/api/db' ? '/api/db.js' : '/api/db';
         const altUrl = url.replace(activeApiEndpoint, altEndpoint);
         const altRes = await fetch(altUrl, options);
         const altCt = altRes.headers.get('content-type') || '';
@@ -333,7 +320,7 @@ function createDbProxyClient() {
       }
       return res;
     } catch (err) {
-      const altEndpoint = activeApiEndpoint.endsWith('.php') ? '/api/db.js' : '/api/db.php';
+      const altEndpoint = activeApiEndpoint === '/api/db' ? '/api/db.js' : '/api/db';
       const altUrl = url.replace(activeApiEndpoint, altEndpoint);
       try {
         const altRes = await fetch(altUrl, options);
@@ -699,13 +686,25 @@ function createDbProxyClient() {
         return builder;
       },
       then: async function (resolve, reject) {
+        let serverErr = null;
         try {
-          await apiFetch('', {
+          const res = await apiFetch('', {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ table, data: payload, where: whereConds })
           });
-        } catch (err) {}
+          const ct = res.headers.get('content-type') || '';
+          if (res.ok && ct.includes('application/json')) {
+            const json = await res.json();
+            if (json.error) serverErr = json.error;
+            else updateDbStatus({ connected: true, error: null });
+          } else {
+            serverErr = 'HTTP Error ' + res.status;
+          }
+        } catch (err) {
+          serverErr = err.message;
+          updateDbStatus({ connected: false, error: err.message });
+        }
 
         const localData = getLocalTableData(table);
         localData.forEach((row, idx) => {
@@ -718,7 +717,7 @@ function createDbProxyClient() {
         saveLocalTableData(table, localData);
 
         notifyTableChange(table);
-        return resolve({ data: payload, error: null });
+        return resolve({ data: payload, error: serverErr });
       }
     };
     return builder;
@@ -737,8 +736,9 @@ function createDbProxyClient() {
         return builder;
       },
       then: async function (resolve, reject) {
+        let serverErr = null;
         try {
-          await apiFetch('', {
+          const res = await apiFetch('', {
             method: 'DELETE',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
@@ -747,7 +747,18 @@ function createDbProxyClient() {
               clear_all: whereConds.length === 0 
             })
           });
-        } catch (err) {}
+          const ct = res.headers.get('content-type') || '';
+          if (res.ok && ct.includes('application/json')) {
+            const json = await res.json();
+            if (json.error) serverErr = json.error;
+            else updateDbStatus({ connected: true, error: null });
+          } else {
+            serverErr = 'HTTP Error ' + res.status;
+          }
+        } catch (err) {
+          serverErr = err.message;
+          updateDbStatus({ connected: false, error: err.message });
+        }
 
         let localData = getLocalTableData(table);
         if (whereConds.length > 0) {
@@ -764,7 +775,7 @@ function createDbProxyClient() {
         saveLocalTableData(table, localData);
 
         notifyTableChange(table);
-        return resolve({ data: { success: true }, error: null });
+        return resolve({ data: { success: !serverErr }, error: serverErr });
       }
     };
     return builder;

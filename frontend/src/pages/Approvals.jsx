@@ -77,6 +77,7 @@ export function parseInvoiceAttachment(raw) {
   if (Array.isArray(parsed)) {
     parsed = { files: parsed };
   }
+
   // Normalize files array for multi-photo / multi-file support
   let filesList = [];
   if (Array.isArray(parsed.files) && parsed.files.length > 0) {

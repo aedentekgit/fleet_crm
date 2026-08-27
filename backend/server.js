@@ -9,6 +9,7 @@ import dbHandler from './api/db.js';
 import notifyHandler from './api/notify.js';
 import parseJobsHandler from './api/parse-jobs.js';
 import webhookHandler from './api/webhook.js';
+import uploadHandler, { multerUploadMiddleware } from './api/upload.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -33,14 +34,25 @@ if (fs.existsSync(envPath)) {
 }
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 5000;
 
 // Enable CORS
 app.use(cors());
 
-// Parse JSON & URL-encoded request bodies
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+// Uploads directory
+const defaultUploadsDir = path.resolve(__dirname, 'uploads');
+const UPLOADS_DIR = process.env.UPLOADS_DIR || defaultUploadsDir;
+if (!fs.existsSync(UPLOADS_DIR)) {
+  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+}
+
+// Serve uploaded files statically
+app.use('/uploads', express.static(UPLOADS_DIR));
+app.use('/staging/uploads', express.static(UPLOADS_DIR));
+
+// Parse JSON & URL-encoded request bodies (large limit for base64 images)
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Helper to wrap API handlers for Express
 const wrapHandler = (handler) => async (req, res, next) => {
@@ -59,6 +71,9 @@ app.all(['/api/db', '/api/db.js', '/api/db.php'], wrapHandler(dbHandler));
 app.all(['/api/notify', '/api/notify.js', '/api/notify.php'], wrapHandler(notifyHandler));
 app.all(['/api/parse-jobs', '/api/parse-jobs.js', '/api/parse-jobs.php'], wrapHandler(parseJobsHandler));
 app.all(['/api/webhook', '/api/webhook.js'], wrapHandler(webhookHandler));
+
+// File Upload CRUD endpoints
+app.all(['/api/upload', '/api/upload.js', '/staging/api/upload'], multerUploadMiddleware, wrapHandler(uploadHandler));
 
 // Default /api route fallback
 app.all('/api', wrapHandler(dbHandler));

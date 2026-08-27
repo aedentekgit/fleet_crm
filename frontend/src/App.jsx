@@ -239,10 +239,11 @@ function AppContent() {
 }
 
 export default function App() {
+  const isStaging = typeof window !== 'undefined' && window.location.pathname.startsWith('/staging');
   return (
     <AuthProvider>
       <ToastProvider>
-        <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <Router basename={isStaging ? '/staging' : '/'} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
           <AppContent />
         </Router>
       </ToastProvider>

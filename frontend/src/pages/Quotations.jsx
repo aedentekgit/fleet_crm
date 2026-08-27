@@ -1936,7 +1936,7 @@ export default function Quotations() {
 
   const clearAllTestingQuotes = async () => {
     try {
-      await fetch('/api/db.php?action=clear_quotes_and_jobs');
+      await fetch('/api/db?action=clear_quotes_and_jobs');
     } catch (e) { }
     if (sb) {
       try {
