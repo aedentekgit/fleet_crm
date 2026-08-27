@@ -1,3 +1,8 @@
+import crypto from 'crypto';
+if (!globalThis.crypto) {
+  globalThis.crypto = crypto;
+}
+
 import { MongoClient } from 'mongodb';
 
 const uri = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017';

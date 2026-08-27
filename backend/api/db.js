@@ -1,3 +1,8 @@
+import crypto from 'crypto';
+if (!globalThis.crypto) {
+  globalThis.crypto = crypto;
+}
+
 import { getDb, connectDb } from '../db/mongodb.js';
 
 const ALLOWED_COLLECTIONS = [
